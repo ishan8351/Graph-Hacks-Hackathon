@@ -1,0 +1,223 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://active-memory.enterprise.internal/schemas/events.schema.json",
+  "title": "ActiveEngineeringMemoryEventStream",
+  "description": "Standardized Server-Sent Events (SSE) contract for real-time observability, FalkorDB graph mutation streaming, guardrail alerts, and multi-agent reasoning traces.",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/definitions/AgentStepEvent" },
+    { "$ref": "#/definitions/McpToolCallEvent" },
+    { "$ref": "#/definitions/GraphMutationEvent" },
+    { "$ref": "#/definitions/GuardrailTriggeredEvent" },
+    { "$ref": "#/definitions/SessionCompleteEvent" }
+  ],
+  "definitions": {
+    "AgentStepEvent": {
+      "type": "object",
+      "description": "Emitted when an agent (e.g. LangGraph worker) records a reasoning step and planned action.",
+      "required": ["event_id", "timestamp", "event_type", "agent_name", "session_id", "thought", "action"],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "description": "Unique identifier for this event instance (UUID v4)."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp of event generation."
+        },
+        "event_type": {
+          "type": "string",
+          "const": "AGENT_STEP"
+        },
+        "agent_name": {
+          "type": "string",
+          "description": "Identifier of the agent worker, e.g. 'RefactoringArchitectAgent' or 'CodeInvestigationAgent'."
+        },
+        "session_id": {
+          "type": "string",
+          "description": "Active session trace identifier."
+        },
+        "thought": {
+          "type": "string",
+          "description": "Internal chain-of-thought rationale driving the next tool or action."
+        },
+        "action": {
+          "type": "string",
+          "description": "The specific planned operation or execution target."
+        }
+      },
+      "additionalProperties": false
+    },
+    "McpToolCallEvent": {
+      "type": "object",
+      "description": "Emitted when a FastMCP tool is invoked against the FalkorDB memory layer or internal systems.",
+      "required": ["event_id", "timestamp", "event_type", "tool_name", "arguments", "cypher_executed", "latency_ms"],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "description": "Unique identifier for this event instance (UUID v4)."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp of event generation."
+        },
+        "event_type": {
+          "type": "string",
+          "const": "MCP_TOOL_CALL"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "Active session trace identifier."
+        },
+        "tool_name": {
+          "type": "string",
+          "description": "Name of the FastMCP tool executed, e.g. 'query_decision_graph' or 'inspect_guardrails'."
+        },
+        "arguments": {
+          "type": "object",
+          "description": "Dictionary of arguments passed into the tool."
+        },
+        "cypher_executed": {
+          "type": ["string", "null"],
+          "description": "Raw Cypher query string dispatched to FalkorDB, or null if non-graph tool."
+        },
+        "latency_ms": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Execution latency in milliseconds."
+        }
+      },
+      "additionalProperties": false
+    },
+    "GraphMutationEvent": {
+      "type": "object",
+      "description": "Emitted when FalkorDB graph state is mutated (nodes created, relationships updated, properties refreshed).",
+      "required": ["event_id", "timestamp", "event_type", "mutation_type", "affected_nodes", "affected_edges", "summary"],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "description": "Unique identifier for this event instance (UUID v4)."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp of event generation."
+        },
+        "event_type": {
+          "type": "string",
+          "const": "GRAPH_MUTATION"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "Active session trace identifier."
+        },
+        "mutation_type": {
+          "type": "string",
+          "enum": ["CREATE_NODE", "UPDATE_NODE", "DELETE_NODE", "MERGE_RELATIONSHIP", "DELETE_RELATIONSHIP", "BATCH_UPSERT"],
+          "description": "Category of graph mutation performed in FalkorDB."
+        },
+        "affected_nodes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of node labels or IDs affected by the mutation."
+        },
+        "affected_edges": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of relationship types or edge IDs affected."
+        },
+        "summary": {
+          "type": "string",
+          "description": "Human-readable summary of the graph mutation."
+        }
+      },
+      "additionalProperties": false
+    },
+    "GuardrailTriggeredEvent": {
+      "type": "object",
+      "description": "Emitted when an active engineering guardrail blocks or flags an unsafe code alteration or architecture regression.",
+      "required": ["event_id", "timestamp", "event_type", "module_name", "decision_id", "jira_ticket", "vcs_comment", "engineer_owner", "path_nodes"],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "description": "Unique identifier for this event instance (UUID v4)."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp of event generation."
+        },
+        "event_type": {
+          "type": "string",
+          "const": "GUARDRAIL_TRIGGERED"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "Active session trace identifier."
+        },
+        "module_name": {
+          "type": "string",
+          "description": "Target module or component that triggered the guardrail violation."
+        },
+        "decision_id": {
+          "type": "string",
+          "description": "ID of the governing Architecture Decision Record (e.g. 'ADR-042')."
+        },
+        "jira_ticket": {
+          "type": "string",
+          "description": "Associated Jira ticket documenting the invariant or incident postmortem."
+        },
+        "vcs_comment": {
+          "type": "string",
+          "description": "Historic code review warning or PR comment explaining the architectural rationale."
+        },
+        "engineer_owner": {
+          "type": "string",
+          "description": "Lead engineer or architect who authored the decision."
+        },
+        "path_nodes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Ordered node IDs tracing the FalkorDB traversal path proving the violation."
+        }
+      },
+      "additionalProperties": false
+    },
+    "SessionCompleteEvent": {
+      "type": "object",
+      "description": "Emitted when an agent session reaches terminal state (SUCCESS, BLOCKED_BY_GUARDRAIL, or FAILED).",
+      "required": ["event_id", "timestamp", "event_type", "session_id", "status", "final_summary"],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "description": "Unique identifier for this event instance (UUID v4)."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp of event generation."
+        },
+        "event_type": {
+          "type": "string",
+          "const": "SESSION_COMPLETE"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "Active session trace identifier."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["SUCCESS", "BLOCKED_BY_GUARDRAIL", "FAILED", "ABORTED"],
+          "description": "Terminal status of the session."
+        },
+        "final_summary": {
+          "type": "string",
+          "description": "Comprehensive explanation of outcomes, decisions safeguarded, or mutations applied."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
