@@ -133,6 +133,53 @@ async def test_stream_scenario_a_session_1_and_2():
         term_s2 = [e for e in events_s2 if isinstance(e, SessionCompleteEvent)][0]
         assert term_s2.status == "SUCCESS"
 
+        # --- Stream Session 1 AGAIN (already healed) ---
+        events_s1_repeat = []
+        async with client.stream("GET", f"/api/stream/scenario-a/session-1?tenant_id={tenant}") as resp_s1_rep:
+            assert resp_s1_rep.status_code == 200
+            async for line in resp_s1_rep.aiter_lines():
+                if line.startswith("data:"):
+                    payload_str = line[len("data:"):].strip()
+                    if payload_str:
+                        payload = json.loads(payload_str)
+                        events_s1_repeat.append(parse_event(payload))
+
+        term_s1_rep = [e for e in events_s1_repeat if isinstance(e, SessionCompleteEvent)][0]
+        assert term_s1_rep.status == "SUCCESS"
+
+        # --- Stream Session 2 on unhealed tenant ---
+        tenant_unhealed = "tenant_test_sse_unhealed"
+        await client.post("/api/graph/reset", json={"tenant_id": tenant_unhealed})
+
+        events_s2_unhealed = []
+        async with client.stream("GET", f"/api/stream/scenario-a/session-2?tenant_id={tenant_unhealed}") as resp_s2_unh:
+            assert resp_s2_unh.status_code == 200
+            async for line in resp_s2_unh.aiter_lines():
+                if line.startswith("data:"):
+                    payload_str = line[len("data:"):].strip()
+                    if payload_str:
+                        payload = json.loads(payload_str)
+                        events_s2_unhealed.append(parse_event(payload))
+
+        term_s2_unh = [e for e in events_s2_unhealed if isinstance(e, SessionCompleteEvent)][0]
+        assert term_s2_unh.status == "FAILED"
+
+        # --- Stream Session 2 on empty tenant (never seeded) ---
+        tenant_empty = "tenant_test_sse_never_seeded"
+        events_s2_empty = []
+        async with client.stream("GET", f"/api/stream/scenario-a/session-2?tenant_id={tenant_empty}") as resp_s2_emp:
+            assert resp_s2_emp.status_code == 200
+            async for line in resp_s2_emp.aiter_lines():
+                if line.startswith("data:"):
+                    payload_str = line[len("data:"):].strip()
+                    if payload_str:
+                        payload = json.loads(payload_str)
+                        events_s2_empty.append(parse_event(payload))
+
+        term_s2_emp = [e for e in events_s2_empty if isinstance(e, SessionCompleteEvent)][0]
+        assert term_s2_emp.status == "FAILED"
+
+
 
 @pytest.mark.asyncio
 async def test_stream_scenario_b_guardrail():
@@ -176,3 +223,31 @@ async def test_stream_scenario_b_guardrail():
         comp_event = [e for e in events_b if isinstance(e, SessionCompleteEvent)][0]
         assert comp_event.status == "BLOCKED_BY_GUARDRAIL"
         assert "Aarav" in comp_event.final_summary
+
+
+@pytest.mark.asyncio
+async def test_stream_scenario_b_without_guardrail():
+    """
+    Test real-time SSE streaming for Scenario B when no guardrail is triggered
+    (clean tenant). Asserts that session completes with SUCCESS.
+    """
+    tenant = "tenant_test_sse_b_clean"
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        events = []
+        async with client.stream("GET", f"/api/stream/scenario-b/guardrail?tenant_id={tenant}") as resp:
+            assert resp.status_code == 200
+            async for line in resp.aiter_lines():
+                if line.startswith("data:"):
+                    payload_str = line[len("data:"):].strip()
+                    if payload_str:
+                        payload = json.loads(payload_str)
+                        events.append(parse_event(payload))
+
+        types = [e.event_type for e in events]
+        assert "SESSION_COMPLETE" in types
+        assert "GUARDRAIL_TRIGGERED" not in types
+        comp = [e for e in events if isinstance(e, SessionCompleteEvent)][0]
+        assert comp.status == "SUCCESS"
+

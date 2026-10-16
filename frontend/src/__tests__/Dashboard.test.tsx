@@ -101,6 +101,7 @@ class MockEventSource {
   url: string;
   onmessage: ((event: { data: string }) => void) | null = null;
   onerror: ((error: unknown) => void) | null = null;
+  listeners: Record<string, ((event: { data: string }) => void)[]> = {};
   static instances: MockEventSource[] = [];
 
   constructor(url: string) {
@@ -108,11 +109,28 @@ class MockEventSource {
     MockEventSource.instances.push(this);
   }
 
+  addEventListener(type: string, listener: (event: { data: string }) => void) {
+    if (!this.listeners[type]) {
+      this.listeners[type] = [];
+    }
+    this.listeners[type].push(listener);
+  }
+
+  removeEventListener(type: string, listener: (event: { data: string }) => void) {
+    if (this.listeners[type]) {
+      this.listeners[type] = this.listeners[type].filter((l) => l !== listener);
+    }
+  }
+
   close() {}
 
   emit(data: Record<string, unknown>) {
-    if (this.onmessage) {
-      this.onmessage({ data: JSON.stringify(data) });
+    const payload = { data: JSON.stringify(data) };
+    const eventType = data.event_type as string;
+    if (eventType && this.listeners[eventType] && this.listeners[eventType].length > 0) {
+      this.listeners[eventType].forEach((listener) => listener(payload));
+    } else if (this.onmessage) {
+      this.onmessage(payload);
     }
   }
 }
@@ -291,6 +309,33 @@ describe("Dashboard Visual Explainability Component (Phase 5 TDD)", () => {
     await waitFor(() => {
       expect(screen.getByText(/Graph Stigmergy Mutation/i)).toBeInTheDocument();
       expect(screen.getByText(/Deprecated \/v1\/legacy-auth/i)).toBeInTheDocument();
+    });
+  });
+
+  it("renders SESSION_COMPLETE with FAILED status with failure alert card", async () => {
+    render(<Dashboard />);
+
+    const act1Btn = screen.getByText(/Run Act 1: Session 2/i);
+    await act(async () => {
+      fireEvent.click(act1Btn);
+    });
+
+    const sse = MockEventSource.instances[MockEventSource.instances.length - 1];
+
+    await act(async () => {
+      sse.emit({
+        event_id: "evt_comp_fail",
+        timestamp: "2026-10-16T06:30:03Z",
+        event_type: "SESSION_COMPLETE",
+        session_id: "sess_test_fail",
+        status: "FAILED",
+        final_summary: "Swarm execution halted due to unhealed route.",
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/SESSION_COMPLETE: FAILED/i)).toBeInTheDocument();
+      expect(screen.getByText(/Swarm execution halted due to unhealed route/i)).toBeInTheDocument();
     });
   });
 });

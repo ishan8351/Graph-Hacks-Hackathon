@@ -30,6 +30,7 @@ from app.models.events import (
     GraphMutationEvent,
     GuardrailTriggeredEvent,
     SessionCompleteEvent,
+    SessionStatus,
 )
 from app.services.fake_api_gateway import FakeMicroserviceGateway, DeprecatedAPIError
 
@@ -105,7 +106,15 @@ def scenario_a_s1_execute_and_heal(
     endpoint = state["active_endpoint"] or "/v1/legacy-auth"
 
     try:
-        gateway.call(endpoint, method="POST")
+        call_res = gateway.call(endpoint, method="POST")
+        step_succ_evt = AgentStepEvent(
+            session_id=state["session_id"],
+            agent_name="IngestionSubagent",
+            thought=f"Endpoint '{endpoint}' is active and operational. Call succeeded with status {call_res.get('status', 200)}.",
+            action="finalize_successful_execution",
+        )
+        _emit_event(state, step_succ_evt, listener)
+        state["final_outcome"] = "SUCCESS"
     except DeprecatedAPIError as exc:
         step_err_evt = AgentStepEvent(
             session_id=state["session_id"],
@@ -154,16 +163,34 @@ def scenario_a_s1_execute_and_heal(
 
         # Retry with replacement endpoint
         state["active_endpoint"] = exc.recommended_replacement
-        retry_res = gateway.call(state["active_endpoint"], method="POST")
-
-        step_retry_evt = AgentStepEvent(
+        try:
+            retry_res = gateway.call(state["active_endpoint"], method="POST")
+            step_retry_evt = AgentStepEvent(
+                session_id=state["session_id"],
+                agent_name="IngestionSubagent",
+                thought=f"Retrying operational step on self-healed endpoint '{state['active_endpoint']}'. Call succeeded with status {retry_res.get('status', 200)}.",
+                action="finalize_successful_execution",
+            )
+            _emit_event(state, step_retry_evt, listener)
+            state["final_outcome"] = "SUCCESS"
+        except Exception as retry_exc:
+            step_fail_evt = AgentStepEvent(
+                session_id=state["session_id"],
+                agent_name="IngestionSubagent",
+                thought=f"Retry failed on self-healed endpoint '{state['active_endpoint']}': {retry_exc}",
+                action="fail_execution",
+            )
+            _emit_event(state, step_fail_evt, listener)
+            state["final_outcome"] = "FAILED"
+    except Exception as exc:
+        step_fail_evt = AgentStepEvent(
             session_id=state["session_id"],
             agent_name="IngestionSubagent",
-            thought=f"Retrying operational step on self-healed endpoint '{state['active_endpoint']}'. Call succeeded with status {retry_res['status']}.",
-            action="finalize_successful_execution",
+            thought=f"Unexpected error executing {endpoint}: {exc}",
+            action="fail_execution",
         )
-        _emit_event(state, step_retry_evt, listener)
-        state["final_outcome"] = "SUCCESS"
+        _emit_event(state, step_fail_evt, listener)
+        state["final_outcome"] = "FAILED"
 
     return state
 
@@ -197,31 +224,75 @@ def scenario_a_s2_zero_shot_resolution(
     )
     _emit_event(state, tool_evt, listener)
 
-    state["active_endpoint"] = route_res.get("active_endpoint")
+    active_ep = route_res.get("active_endpoint")
+    state["active_endpoint"] = active_ep
+
+    if not active_ep:
+        step_fail_evt = AgentStepEvent(
+            session_id=state["session_id"],
+            agent_name="BillingSubagent",
+            thought=(
+                f"FalkorDB procedural traversal found no operational route registered for module '{state['target_module']}'. "
+                "Execution aborted. Please reset and seed graph first."
+            ),
+            action="abort_unresolved_route",
+        )
+        _emit_event(state, step_fail_evt, listener)
+        state["final_outcome"] = "FAILED"
+        return state
+
+    if route_res.get("route_type") == "SELF_HEALED":
+        thought = (
+            f"FalkorDB procedural traversal detected previous failure episode. "
+            f"Route automatically self-healed to '{active_ep}' with zero trial and error. "
+            "Executing operational call."
+        )
+    else:
+        thought = (
+            f"FalkorDB procedural traversal returned route '{active_ep}' "
+            f"(route_type: {route_res.get('route_type', 'UNKNOWN')}). Executing operational call."
+        )
 
     step_exec_evt = AgentStepEvent(
         session_id=state["session_id"],
         agent_name="BillingSubagent",
-        thought=(
-            f"FalkorDB procedural traversal detected previous failure episode. "
-            f"Route automatically self-healed to '{state['active_endpoint']}' with zero trial and error. "
-            "Executing operational call."
-        ),
-        action=f"call({state['active_endpoint']})",
+        thought=thought,
+        action=f"call({active_ep})",
     )
     _emit_event(state, step_exec_evt, listener)
 
-    # Call succeeds zero-shot!
-    call_res = gateway.call(state["active_endpoint"], method="POST")
-    state["final_outcome"] = "SUCCESS"
-
-    step_succ_evt = AgentStepEvent(
-        session_id=state["session_id"],
-        agent_name="BillingSubagent",
-        thought=f"Zero-shot call to {state['active_endpoint']} completed successfully (token: {call_res.get('token')[:12]}...).",
-        action="finalize_execution",
-    )
-    _emit_event(state, step_succ_evt, listener)
+    endpoint_to_call = active_ep
+    try:
+        call_res = gateway.call(endpoint_to_call, method="POST")
+        state["final_outcome"] = "SUCCESS"
+        step_succ_evt = AgentStepEvent(
+            session_id=state["session_id"],
+            agent_name="BillingSubagent",
+            thought=f"Zero-shot call to {endpoint_to_call} completed successfully (token: {call_res.get('token', '')[:12]}...).",
+            action="finalize_execution",
+        )
+        _emit_event(state, step_succ_evt, listener)
+    except DeprecatedAPIError as exc:
+        step_fail_evt = AgentStepEvent(
+            session_id=state["session_id"],
+            agent_name="BillingSubagent",
+            thought=(
+                f"Execution failed on '{endpoint_to_call}': {exc.error_code}. "
+                "Notice: Route has not been self-healed by Session 1 yet. Run Act 1 Session 1 first to trigger Graph Stigmergy."
+            ),
+            action="fail_unhealed_route",
+        )
+        _emit_event(state, step_fail_evt, listener)
+        state["final_outcome"] = "FAILED"
+    except Exception as exc:
+        step_fail_evt = AgentStepEvent(
+            session_id=state["session_id"],
+            agent_name="BillingSubagent",
+            thought=f"Execution error on route {endpoint_to_call}: {exc}",
+            action="fail_execution",
+        )
+        _emit_event(state, step_fail_evt, listener)
+        state["final_outcome"] = "FAILED"
 
     return state
 
@@ -280,10 +351,10 @@ def scenario_b_guardrail_check(
         state["guardrail_halted"] = True
         state["final_outcome"] = "BLOCKED_BY_GUARDRAIL"
 
-        dec_id = decision_trace["decision"]["id"]
-        jira_id = decision_trace["jira_ticket"]["id"]
-        vcs_text = decision_trace["vcs_comment"]["text"]
-        owner_name = decision_trace["engineer"]["name"]
+        dec_id = (decision_trace.get("decision") or {}).get("id") or "ADR-UNKNOWN"
+        jira_id = (decision_trace.get("jira_ticket") or {}).get("id") or "JIRA-UNKNOWN"
+        vcs_text = (decision_trace.get("vcs_comment") or {}).get("text") or "Refactor invariant active."
+        owner_name = (decision_trace.get("engineer") or {}).get("name") or "Architect"
         path = decision_trace.get("path_nodes", [])
 
         gr_evt = GuardrailTriggeredEvent(
@@ -309,6 +380,19 @@ def scenario_b_guardrail_check(
             action="abort_destructive_refactor",
         )
         _emit_event(state, step_halt_evt, listener)
+    else:
+        state["guardrail_halted"] = False
+        state["final_outcome"] = "SUCCESS"
+        step_pass_evt = AgentStepEvent(
+            session_id=state["session_id"],
+            agent_name="ArchitectAgent",
+            thought=(
+                f"No active engineering guardrails found blocking refactor for module '{state['target_module']}'. "
+                "Optimization may proceed safely."
+            ),
+            action="allow_refactor",
+        )
+        _emit_event(state, step_pass_evt, listener)
 
     return state
 
@@ -318,12 +402,33 @@ def complete_session_node(
     listener: Optional[EventListener] = None,
 ) -> SwarmState:
     """Final terminal node emitting SESSION_COMPLETE event."""
-    outcome = state.get("final_outcome", "SUCCESS")
-    if outcome == "BLOCKED_BY_GUARDRAIL":
+    outcome_raw = state.get("final_outcome")
+    if not outcome_raw:
+        if state.get("guardrail_halted"):
+            outcome_raw = "BLOCKED_BY_GUARDRAIL"
+        else:
+            outcome_raw = "SUCCESS"
+
+    if isinstance(outcome_raw, SessionStatus):
+        outcome = outcome_raw
+    else:
+        try:
+            outcome = SessionStatus(outcome_raw)
+        except (ValueError, TypeError):
+            outcome = SessionStatus.SUCCESS
+
+    state["final_outcome"] = outcome.value
+
+    if outcome == SessionStatus.BLOCKED_BY_GUARDRAIL:
         summary = (
             "Refactor blocked by Active Engineering Guardrail. PaymentRetryWorker is governed by ADR dec_19 "
             "(SUBOPTIMAL_WORKAROUND) authored by Aarav for incident postmortem PAY-409. Synchronous single-item "
             "charge processing preserved to prevent webhook drop outage."
+        )
+    elif outcome == SessionStatus.FAILED:
+        summary = (
+            f"Multi-agent swarm execution halted due to failure on module {state.get('target_module', 'Unknown')} "
+            f"on route {state.get('active_endpoint', 'None')}."
         )
     else:
         summary = (

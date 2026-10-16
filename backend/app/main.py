@@ -14,14 +14,22 @@ Exposes high-performance REST and Server-Sent Events (SSE) streaming endpoints:
 
 import asyncio
 import logging
+from pathlib import Path
+import sys
 from typing import Any, Callable, Dict, Optional
-from fastapi import FastAPI, Query
+
+# Ensure backend root directory is in sys.path
+backend_dir = str(Path(__file__).resolve().parents[1])
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
 
 logger = logging.getLogger(__name__)
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 
+import uuid
 from app.agents.swarm import (
     run_scenario_a_session_1,
     run_scenario_a_session_2,
@@ -29,6 +37,7 @@ from app.agents.swarm import (
 )
 from app.db.graph_client import FalkorDBClient
 from app.db.seed_enterprise_graph import seed_tenant_graph
+from app.models.events import SessionCompleteEvent, SessionStatus
 
 # Initialize FastAPI application
 app = FastAPI(
@@ -184,6 +193,12 @@ async def _stream_scenario_runner(runner_fn: Callable[..., Any], tenant_id: str)
             )
         except Exception as exc:
             logger.exception("Error executing swarm runner background task: %s", exc)
+            fallback_term = SessionCompleteEvent(
+                session_id=f"sess_err_{uuid.uuid4().hex[:8]}",
+                status=SessionStatus.FAILED,
+                final_summary=f"Swarm runner background task failed: {str(exc)}",
+            )
+            event_listener(fallback_term)
         finally:
             loop.call_soon_threadsafe(queue.put_nowait, None)
 

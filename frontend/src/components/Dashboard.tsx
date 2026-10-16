@@ -105,7 +105,7 @@ export default function Dashboard() {
     const es = new EventSource(sseUrl);
     activeEventSource.current = es;
 
-    es.onmessage = (e: { data: string }) => {
+    const handleEventMessage = (e: { data: string }) => {
       try {
         const eventData: MemoryLayerEvent = JSON.parse(e.data);
         setEvents((prev) => [...prev, eventData]);
@@ -157,6 +157,18 @@ export default function Dashboard() {
         console.error("Error parsing SSE event:", err);
       }
     };
+
+    es.onmessage = handleEventMessage;
+    const EVENT_TYPES = [
+      "AGENT_STEP",
+      "MCP_TOOL_CALL",
+      "GRAPH_MUTATION",
+      "GUARDRAIL_TRIGGERED",
+      "SESSION_COMPLETE",
+    ];
+    EVENT_TYPES.forEach((evtType) => {
+      es.addEventListener(evtType, (e) => handleEventMessage(e as MessageEvent));
+    });
 
     es.onerror = (err) => {
       console.warn("SSE stream ended or encountered error:", err);

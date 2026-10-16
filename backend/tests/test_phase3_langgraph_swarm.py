@@ -165,3 +165,81 @@ def test_scenario_b_guardrail_halts_destructive_refactor(client: FalkorDBClient)
         tenant_id=tenant,
     )
     assert len(dangerous_check.records) == 0, "Catastrophic batch endpoint was dangerously linked!"
+
+
+def test_scenario_a_rerun_on_healed_graph(client: FalkorDBClient):
+    """
+    Validate that re-running Session 1 on an already healed graph
+    completes cleanly with SUCCESS status without Pydantic ValidationError.
+    """
+    tenant = "test_tenant_swarm"
+    # Session 1 runs first time and heals the graph
+    run_scenario_a_session_1(tenant_id=tenant, session_id="sess_first")
+
+    # Session 1 runs second time on already healed route
+    state_repeat = run_scenario_a_session_1(tenant_id=tenant, session_id="sess_repeat")
+    assert state_repeat["final_outcome"] == "SUCCESS"
+    assert state_repeat["active_endpoint"] == "/v3/oauth/token"
+
+    complete_events = [e for e in state_repeat["events_emitted"] if isinstance(e, SessionCompleteEvent)]
+    assert len(complete_events) == 1
+    assert complete_events[0].status == "SUCCESS"
+
+
+def test_scenario_a_session_2_on_unhealed_graph(client: FalkorDBClient):
+    """
+    Validate that running Session 2 before Session 1 has healed the graph
+    fails gracefully with FAILED terminal status rather than an uncaught crash.
+    """
+    tenant = "test_tenant_swarm"
+    # Seed fresh unhealed graph
+    seed_tenant_graph(client, tenant_id=tenant)
+
+    state_s2 = run_scenario_a_session_2(tenant_id=tenant, session_id="sess_unhealed")
+    assert state_s2["final_outcome"] == "FAILED"
+
+    complete_events = [e for e in state_s2["events_emitted"] if isinstance(e, SessionCompleteEvent)]
+    assert len(complete_events) == 1
+    assert complete_events[0].status == "FAILED"
+
+
+def test_scenario_a_session_2_on_empty_graph(client: FalkorDBClient):
+    """
+    Validate that running Session 2 on an empty/unseeded graph
+    fails gracefully with FAILED terminal status instead of fabricating
+    a zero-shot call to /v3/oauth/token.
+    """
+    tenant_empty = "test_tenant_swarm_empty"
+    client.reset_graph(tenant_empty)
+
+    state_s2 = run_scenario_a_session_2(tenant_id=tenant_empty, session_id="sess_empty_s2")
+    assert state_s2["final_outcome"] == "FAILED"
+    assert state_s2["active_endpoint"] is None
+
+    complete_events = [e for e in state_s2["events_emitted"] if isinstance(e, SessionCompleteEvent)]
+    assert len(complete_events) == 1
+    assert complete_events[0].status == "FAILED"
+    assert any("abort_unresolved_route" in getattr(e, "action", "") for e in state_s2["events_emitted"])
+
+    client.reset_graph(tenant_empty)
+
+
+def test_scenario_b_on_module_without_guardrail(client: FalkorDBClient):
+    """
+    Validate Scenario B execution on a clean tenant where no guardrail exists:
+    should complete with SUCCESS and guardrail_halted=False.
+    """
+    tenant_clean = "test_tenant_swarm_clean"
+    client.reset_graph(tenant_clean)
+
+    state_b = run_scenario_b_refactor_guardrail(tenant_id=tenant_clean, session_id="sess_clean_b")
+    assert state_b["final_outcome"] == "SUCCESS"
+    assert state_b["guardrail_halted"] is False
+
+    complete_events = [e for e in state_b["events_emitted"] if isinstance(e, SessionCompleteEvent)]
+    assert len(complete_events) == 1
+    assert complete_events[0].status == "SUCCESS"
+
+    client.reset_graph(tenant_clean)
+
+

@@ -202,18 +202,21 @@ export default function AgentFeed({ events, onOpenExplainDrawer }: AgentFeedProp
             if (event.event_type === "SESSION_COMPLETE") {
               const comp = event as SessionCompleteEvent;
               const isBlocked = comp.status === "BLOCKED_BY_GUARDRAIL";
+              const isFailed = comp.status === "FAILED" || comp.status === "ABORTED";
               return (
                 <div
                   key={comp.event_id || idx}
                   className={`p-4 rounded-xl border space-y-2 ${
                     isBlocked
+                      ? "border-amber-500/40 bg-amber-950/30 text-amber-200"
+                      : isFailed
                       ? "border-rose-500/40 bg-rose-950/30 text-rose-200"
                       : "border-emerald-500/40 bg-emerald-950/30 text-emerald-200"
                   }`}
                 >
                   <div className="flex items-center gap-2 text-xs font-bold">
-                    {isBlocked ? (
-                      <AlertTriangle className="w-4 h-4 text-rose-400" />
+                    {isBlocked || isFailed ? (
+                      <AlertTriangle className={`w-4 h-4 ${isBlocked ? "text-amber-400" : "text-rose-400"}`} />
                     ) : (
                       <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                     )}
