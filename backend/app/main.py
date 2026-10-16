@@ -71,6 +71,14 @@ class ResetGraphRequest(BaseModel):
     )
 
 
+class GraphQueryRequest(BaseModel):
+    query: str = Field(..., description="OpenCypher query to execute against FalkorDB.")
+    tenant_id: str = Field(
+        default="tenant_project_alpha",
+        description="Target tenant graph namespace.",
+    )
+
+
 # ==============================================================================
 # REST Endpoints: Health & Multi-Tenant Graph State
 # ==============================================================================
@@ -117,6 +125,37 @@ async def reset_graph_endpoint(request: Optional[ResetGraphRequest] = None) -> D
         "nodes": topology["nodes"],
         "links": topology["links"],
     }
+
+
+@app.post("/api/graph/query")
+async def execute_graph_query_endpoint(request: GraphQueryRequest) -> Dict[str, Any]:
+    """
+    Execute arbitrary OpenCypher query against FalkorDB for the specified tenant.
+    Used by the Interactive Cypher Playground and real-time query debugging.
+    """
+    try:
+        query_res = db_client.query(request.query, tenant_id=request.tenant_id)
+        return {
+            "status": "SUCCESS",
+            "tenant_id": request.tenant_id,
+            "query": request.query,
+            "columns": query_res.columns,
+            "records": query_res.records,
+            "latency_ms": query_res.latency_ms,
+            "count": len(query_res.records),
+        }
+    except Exception as exc:
+        logger.warning("Error executing custom Cypher query: %s", exc)
+        return {
+            "status": "ERROR",
+            "tenant_id": request.tenant_id,
+            "query": request.query,
+            "error": str(exc),
+            "columns": [],
+            "records": [],
+            "latency_ms": 0.0,
+            "count": 0,
+        }
 
 
 @app.get("/api/graph/state")

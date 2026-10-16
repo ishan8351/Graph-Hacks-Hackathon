@@ -69,6 +69,69 @@ async def test_graph_reset_and_state_multi_tenant():
 
 
 @pytest.mark.asyncio
+async def test_graph_query_endpoint():
+    """Verify POST /api/graph/query executes Cypher queries and returns records with latency."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        tenant = "tenant_test_query"
+        await client.post("/api/graph/reset", json={"tenant_id": tenant})
+
+        # Query 1: Read all engineers
+        res = await client.post(
+            "/api/graph/query",
+            json={
+                "tenant_id": tenant,
+                "query": "MATCH (eng:Engineer) RETURN eng.name AS name, eng.role AS role ORDER BY name ASC",
+            },
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "SUCCESS"
+        assert data["count"] >= 4
+        assert "records" in data
+        assert any(r["name"] == "Aarav" for r in data["records"])
+        assert data["latency_ms"] >= 0.0
+
+        # Query 2: Syntax error handled gracefully
+        err_res = await client.post(
+            "/api/graph/query",
+            json={"tenant_id": tenant, "query": "THIS IS INVALID CYPHER SYNTAX"},
+        )
+        assert err_res.status_code == 200
+        err_data = err_res.json()
+        assert err_data["status"] == "ERROR"
+        assert "error" in err_data
+
+
+@pytest.mark.asyncio
+async def test_tenant_beta_seeding_and_isolation():
+    """Verify tenant_project_beta seeds with distinct logistics topology."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post(
+            "/api/graph/reset",
+            json={"tenant_id": "tenant_project_beta"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "SUCCESS"
+        assert data["node_count"] >= 15
+
+        # Query beta graph for Kavita and OrderFulfillmentService
+        query_res = await client.post(
+            "/api/graph/query",
+            json={
+                "tenant_id": "tenant_project_beta",
+                "query": "MATCH (eng:Engineer {name: 'Kavita Rao'}) RETURN eng.role AS role",
+            },
+        )
+        assert query_res.status_code == 200
+        q_data = query_res.json()
+        assert len(q_data["records"]) == 1
+        assert "Logistics Architect" in q_data["records"][0]["role"]
+
+
+@pytest.mark.asyncio
 async def test_stream_scenario_a_session_1_and_2():
     """
     Test real-time SSE streaming for Scenario A Session 1 followed by Session 2.

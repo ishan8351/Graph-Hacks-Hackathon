@@ -41,6 +41,9 @@ def seed_tenant_graph(client: FalkorDBClient, tenant_id: str) -> Dict[str, Any]:
     Returns:
         Summary dict containing status, node_count, and edge_count.
     """
+    if tenant_id == "tenant_project_beta":
+        return seed_tenant_beta_graph(client, tenant_id)
+
     # 1. Reset target graph cleanly
     client.reset_graph(tenant_id=tenant_id)
 
@@ -567,4 +570,111 @@ def seed_tenant_graph(client: FalkorDBClient, tenant_id: str) -> Dict[str, Any]:
         "tenant_id": tenant_id,
         "node_count": node_count,
         "edge_count": edge_count,
+    }
+
+
+def seed_tenant_beta_graph(client: FalkorDBClient, tenant_id: str = "tenant_project_beta") -> Dict[str, Any]:
+    """
+    Reset and seed tenant_project_beta with an E-Commerce Logistics & Carrier Routing topology.
+    Demonstrates multi-tenant graph isolation with a completely distinct domain topology.
+    """
+    client.reset_graph(tenant_id=tenant_id)
+
+    index_statements = [
+        "CREATE INDEX FOR (d:Decision) ON (d.id)",
+        "CREATE INDEX FOR (s:Service) ON (s.id)",
+        "CREATE INDEX FOR (m:CodeModule) ON (m.name)",
+        "CREATE INDEX FOR (e:APIEndpoint) ON (e.name)",
+        "CREATE INDEX FOR (t:JiraTicket) ON (t.id)",
+        "CREATE INDEX FOR (c:VCSComment) ON (c.id)",
+        "CREATE INDEX FOR (eng:Engineer) ON (eng.name)",
+        "CREATE INDEX FOR (g:Guardrail) ON (g.id)",
+    ]
+    for idx in index_statements:
+        client.query(idx, tenant_id=tenant_id)
+
+    beta_cypher = """
+    // Teams & Engineers
+    CREATE (tLogistics:Team {id: 'team_logistics', name: 'Logistics Core', domain: 'Fulfillment & Carrier Operations'})
+    CREATE (tInfra:Team {id: 'team_sre', name: 'Global Reliability', domain: 'SRE & Distributed Systems'})
+
+    CREATE (kavita:Engineer {id: 'eng_beta_1', name: 'Kavita Rao', role: 'Principal Logistics Architect', email: 'kavita@enterprise.internal', domain: 'logistics'})
+    CREATE (elena:Engineer {id: 'eng_beta_2', name: 'Elena Rostova', role: 'Senior SRE', email: 'elena@enterprise.internal', domain: 'reliability'})
+    CREATE (devon:Engineer {id: 'eng_beta_3', name: 'Devon Miles', role: 'Carrier Integration Engineer', email: 'devon@enterprise.internal', domain: 'integrations'})
+
+    CREATE (kavita)-[:MEMBER_OF]->(tLogistics)
+    CREATE (devon)-[:MEMBER_OF]->(tLogistics)
+    CREATE (elena)-[:MEMBER_OF]->(tInfra)
+
+    // Services
+    CREATE (sFulfill:Service {id: 'srv_order_fulfillment', name: 'OrderFulfillmentService', language: 'Rust', tier: 'tier-1'})
+    CREATE (sCarrier:Service {id: 'srv_carrier_gateway', name: 'CarrierGatewayService', language: 'Go', tier: 'tier-1'})
+    CREATE (sInventory:Service {id: 'srv_inventory_sync', name: 'InventorySyncService', language: 'Python', tier: 'tier-2'})
+
+    // Modules
+    CREATE (mWebhook:CodeModule {id: 'mod_carrier_webhook', name: 'CarrierWebhookDispatcher', file_path: 'logistics/dispatch/webhook.rs'})
+    CREATE (mSelector:CodeModule {id: 'mod_warehouse_selector', name: 'WarehouseSelector', file_path: 'logistics/routing/warehouse.rs'})
+    CREATE (mRates:CodeModule {id: 'mod_rate_calculator', name: 'RateCalculator', file_path: 'carrier/pricing/rates.go'})
+
+    // Service contains modules
+    CREATE (sFulfill)-[:CONTAINS]->(mWebhook)
+    CREATE (sFulfill)-[:CONTAINS]->(mSelector)
+    CREATE (sCarrier)-[:CONTAINS]->(mRates)
+
+    // Endpoints
+    CREATE (epFedex:APIEndpoint {id: 'ep_fedex_rates', name: '/v1/fedex/rates', method: 'POST', status: 'ACTIVE', rate_limit: 200})
+    CREATE (epUps:APIEndpoint {id: 'ep_ups_quote', name: '/v2/ups/quote', method: 'POST', status: 'ACTIVE', rate_limit: 500})
+    CREATE (epDhlLegacy:APIEndpoint {id: 'ep_dhl_legacy', name: '/v1/dhl/legacy-book', method: 'POST', status: 'DEPRECATED', is_deprecated: true, deprecation_reason: 'HTTP 410 Gone - Migrated to v2 async broker'})
+    CREATE (epDhlV2:APIEndpoint {id: 'ep_dhl_v2', name: '/v2/dhl/async-book', method: 'POST', status: 'ACTIVE', rate_limit: 1000})
+
+    // Endpoint deprecation & routing
+    CREATE (epDhlLegacy)-[:SUPERSEDED_BY {migration_date: '2026-08-01'}]->(epDhlV2)
+    CREATE (mRates)-[:EXECUTES_STEP]->(epFedex)
+    CREATE (mRates)-[:EXECUTES_STEP]->(epUps)
+    CREATE (mRates)-[:FALLBACK_STEP]->(epDhlV2)
+
+    // Decision & Invariant Guardrail
+    CREATE (adr88:Decision {
+        id: 'ADR-088',
+        title: 'Asynchronous Carrier Dispatch Only',
+        status: 'ACCEPTED',
+        summary: 'Under Black Friday load, carrier sync endpoints timed out causing 12k unfulfilled carts. All carrier booking must use async broker.'
+    })
+    CREATE (jira204:JiraTicket {id: 'LOG-204', summary: 'Carrier booking timeout cascade under high volume', priority: 'P0', status: 'RESOLVED'})
+    CREATE (pr404:VCSComment {
+        id: 'pr_404_c1',
+        text: 'CRITICAL: DO NOT revert to synchronous booking /v1/dhl/legacy-book. Upstream gateway will drop connection after 500ms under load.',
+        repo: 'logistics/carrier-gateway',
+        commit_hash: '9a77b81f'
+    })
+    CREATE (inc55:Incident {id: 'INC-5510', title: 'Carrier Gateway Booking Blackout', severity: 'SEV-1'})
+    CREATE (grLog:Guardrail {
+        id: 'GR-LOG-002',
+        name: 'Async Carrier Dispatch Enforcement',
+        rule: 'MUST NOT call synchronous carrier booking APIs without queue decoupling.'
+    })
+
+    // Invariant 3-hop guardrail path
+    CREATE (mWebhook)-[:IMPLEMENTS]->(adr88)
+    CREATE (adr88)-[:FORCED_BY]->(jira204)
+    CREATE (jira204)-[:EXPLAINED_IN]->(pr404)
+    CREATE (kavita)-[:AUTHORED]->(pr404)
+    CREATE (kavita)-[:AUTHORED]->(adr88)
+    CREATE (kavita)-[:OWNS]->(sFulfill)
+    CREATE (kavita)-[:COLLABORATES_WITH]->(elena)
+    CREATE (kavita)-[:COLLABORATES_WITH]->(devon)
+    CREATE (grLog)-[:PROTECTS]->(mWebhook)
+    CREATE (grLog)-[:ENFORCES]->(adr88)
+    CREATE (inc55)-[:MITIGATES]->(adr88)
+    """
+    client.query(beta_cypher, tenant_id=tenant_id)
+
+    node_res = client.query("MATCH (n) RETURN count(n) AS cnt", tenant_id=tenant_id)
+    edge_res = client.query("MATCH ()-[r]->() RETURN count(r) AS cnt", tenant_id=tenant_id)
+
+    return {
+        "status": "SUCCESS",
+        "tenant_id": tenant_id,
+        "node_count": node_res.records[0]["cnt"] if node_res.records else 0,
+        "edge_count": edge_res.records[0]["cnt"] if edge_res.records else 0,
     }

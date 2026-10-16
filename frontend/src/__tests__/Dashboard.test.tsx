@@ -162,6 +162,21 @@ describe("Dashboard Visual Explainability Component (Phase 5 TDD)", () => {
             json: () => Promise.resolve(mockGraphState),
           });
         }
+        if (url.includes("/api/graph/query")) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () =>
+              Promise.resolve({
+                status: "SUCCESS",
+                tenant_id: "tenant_project_alpha",
+                columns: ["endpoint", "status"],
+                records: [{ endpoint: "/v3/oauth/token", status: "ACTIVE" }],
+                latency_ms: 1.25,
+                count: 1,
+              }),
+          });
+        }
         if (url.includes("/api/health")) {
           return Promise.resolve({
             ok: true,
@@ -336,6 +351,78 @@ describe("Dashboard Visual Explainability Component (Phase 5 TDD)", () => {
     await waitFor(() => {
       expect(screen.getByText(/SESSION_COMPLETE: FAILED/i)).toBeInTheDocument();
       expect(screen.getByText(/Swarm execution halted due to unhealed route/i)).toBeInTheDocument();
+    });
+  });
+
+  it("opens Cypher Playground modal when playground button is clicked", async () => {
+    render(<Dashboard />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/PaymentRetryWorker/i)).toBeInTheDocument();
+    });
+
+    const playgroundBtn = screen.getByTitle(/Open Cypher Playground/i);
+    await act(async () => {
+      fireEvent.click(playgroundBtn);
+    });
+
+    expect(screen.getByText(/FalkorDB Cypher Playground/i)).toBeInTheDocument();
+    expect(screen.getByText(/Preset Analytical Queries/i)).toBeInTheDocument();
+  });
+
+  it("opens Session History modal and displays recorded executions", async () => {
+    render(<Dashboard />);
+
+    const historyBtn = screen.getByTitle(/Session History/i);
+    await act(async () => {
+      fireEvent.click(historyBtn);
+    });
+
+    expect(screen.getByText(/Execution History/i)).toBeInTheDocument();
+  });
+
+  it("opens Architecture Guide modal when guide button is clicked", async () => {
+    render(<Dashboard />);
+
+    const guideBtn = screen.getByTitle(/Architecture Guide & Keybindings/i);
+    await act(async () => {
+      fireEvent.click(guideBtn);
+    });
+
+    expect(screen.getByText(/Active Engineering Memory Layer — Architecture Guide/i)).toBeInTheDocument();
+    expect(screen.getByText(/3-Hop Guardrail \(Act 2\)/i)).toBeInTheDocument();
+  });
+
+  it("switches to MCP Timeline waterfall in AgentFeed and displays duration bar", async () => {
+    render(<Dashboard />);
+
+    const act1Btn = screen.getByText(/Run Act 1: Session 1/i);
+    await act(async () => {
+      fireEvent.click(act1Btn);
+    });
+
+    const sse = MockEventSource.instances[MockEventSource.instances.length - 1];
+    await act(async () => {
+      sse.emit({
+        event_id: "evt_mcp_wf_1",
+        timestamp: "2026-10-16T06:30:01Z",
+        event_type: "MCP_TOOL_CALL",
+        session_id: "sess_test_wf",
+        tool_name: "query_decision_graph",
+        arguments: { module_name: "webhook_router" },
+        cypher_executed: "MATCH (m:CodeModule) RETURN m",
+        latency_ms: 18.5,
+      });
+    });
+
+    const timelineTab = screen.getByText(/MCP Timeline/i);
+    await act(async () => {
+      fireEvent.click(timelineTab);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Total MCP Latency:/i)).toBeInTheDocument();
+      expect(screen.getByText(/18.50ms/i)).toBeInTheDocument();
     });
   });
 });

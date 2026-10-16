@@ -27,14 +27,16 @@ else
     exit 1
 fi
 
-# 2. Seed Default Tenant Graph
-echo "🌱 Pre-seeding FalkorDB tenant_project_alpha with enterprise topology..."
+# 2. Seed Default Tenant Graphs
+echo "🌱 Pre-seeding FalkorDB tenant_project_alpha & tenant_project_beta..."
 "${PYTHON_BIN}" -c "
 from app.db.graph_client import FalkorDBClient
 from app.db.seed_enterprise_graph import seed_tenant_graph
 client = FalkorDBClient()
-res = seed_tenant_graph(client, 'tenant_project_alpha')
-print(f'   Successfully seeded {res[\"node_count\"]} nodes and {res[\"edge_count\"]} relationships.')
+res_a = seed_tenant_graph(client, 'tenant_project_alpha')
+print(f'   Successfully seeded tenant_project_alpha: {res_a[\"node_count\"]} nodes, {res_a[\"edge_count\"]} relationships.')
+res_b = seed_tenant_graph(client, 'tenant_project_beta')
+print(f'   Successfully seeded tenant_project_beta: {res_b[\"node_count\"]} nodes, {res_b[\"edge_count\"]} relationships.')
 "
 
 # 3. Trap for Clean Process Shutdown
