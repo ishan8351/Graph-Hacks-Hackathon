@@ -597,7 +597,7 @@ export default function GraphCanvas({
             </div>
             <p className="text-sm font-semibold text-slate-200">No graph data loaded</p>
             <p className="mt-1 text-xs leading-relaxed text-slate-400">
-              Start FalkorDB and the API, then choose Reset &amp; Seed Graph to load a tenant topology.
+              Make sure FalkorDB and the API are running, then click Reset graph to load the nodes.
             </p>
           </div>
         </div>
@@ -642,8 +642,8 @@ export default function GraphCanvas({
             <div className="absolute w-8 h-8 rounded-full border-2 border-indigo-500/30 border-b-indigo-400 animate-spin" />
           </div>
           <div className="text-center space-y-1">
-            <p className="text-sm font-bold text-slate-200">Synchronizing FalkorDB Knowledge Graph</p>
-            <p className="text-xs text-slate-400 font-mono">Loading active memory topology &amp; constraints...</p>
+            <p className="text-sm font-bold text-slate-200">Loading FalkorDB graph</p>
+            <p className="text-xs text-slate-400 font-mono">Fetching nodes and relationships...</p>
           </div>
         </div>
       )}

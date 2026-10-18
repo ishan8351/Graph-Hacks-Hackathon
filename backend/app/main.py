@@ -14,9 +14,10 @@ Exposes high-performance REST and Server-Sent Events (SSE) streaming endpoints:
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 import sys
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional
 
 # Ensure backend root directory is in sys.path
 backend_dir = str(Path(__file__).resolve().parents[1])
@@ -24,13 +25,14 @@ if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
 logger = logging.getLogger(__name__)
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 
 import uuid
 from app.agents.swarm import (
+    run_agent_handoff_workflow,
     run_scenario_a_session_1,
     run_scenario_a_session_2,
     run_scenario_b_refactor_guardrail,
@@ -38,6 +40,7 @@ from app.agents.swarm import (
 from app.db.graph_client import FalkorDBClient
 from app.db.seed_enterprise_graph import seed_tenant_graph
 from app.models.events import SessionCompleteEvent, SessionStatus
+from app.services.agent_memory import AgentMemoryService
 
 # Initialize FastAPI application
 app = FastAPI(
@@ -46,16 +49,27 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Enable CORS for Next.js frontend on port 3001
+# Configure CORS for local development and cloud deployments (e.g. Vercel)
+cors_origins_env = os.getenv("CORS_ORIGINS", "")
+allowed_origins = [
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+if cors_origins_env:
+    for o in cors_origins_env.split(","):
+        stripped = o.strip()
+        if stripped and stripped not in allowed_origins:
+            allowed_origins.append(stripped)
+
+is_wildcard = cors_origins_env.strip() == "*"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"] if is_wildcard else allowed_origins,
+    allow_origin_regex=None if is_wildcard else os.getenv("CORS_ORIGIN_REGEX", r"https://.*\.vercel\.app"),
+    allow_credentials=not is_wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -77,6 +91,76 @@ class GraphQueryRequest(BaseModel):
         default="tenant_project_alpha",
         description="Target tenant graph namespace.",
     )
+
+
+class MemoryWriteRequest(BaseModel):
+    tenant_id: str = Field(default="tenant_project_alpha", min_length=1, max_length=128)
+    user_id: str = Field(default="demo_user", min_length=1, max_length=128)
+    memory_type: Literal["EPISODIC", "SEMANTIC", "PROCEDURAL"]
+    content: str = Field(..., min_length=1, max_length=12000)
+    agent_id: str = Field(default="human", min_length=1, max_length=128)
+    idempotency_key: str = Field(..., min_length=1, max_length=256)
+    summary: Optional[str] = Field(default=None, max_length=2000)
+    session_id: Optional[str] = None
+    conversation_id: Optional[str] = None
+    source_id: Optional[str] = None
+    confidence: float = Field(default=1.0, ge=0, le=1)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class HandoffCreateRequest(BaseModel):
+    tenant_id: str = Field(default="tenant_project_alpha", min_length=1, max_length=128)
+    user_id: str = Field(default="demo_user", min_length=1, max_length=128)
+    from_agent: str = Field(..., min_length=1, max_length=128)
+    to_agent: str = Field(..., min_length=1, max_length=128)
+    task: str = Field(..., min_length=1, max_length=4000)
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    idempotency_key: str = Field(..., min_length=1, max_length=256)
+
+
+class HandoffUpdateRequest(BaseModel):
+    tenant_id: str = Field(default="tenant_project_alpha", min_length=1, max_length=128)
+    user_id: str = Field(default="demo_user", min_length=1, max_length=128)
+    expected_version: int = Field(..., ge=1)
+    status: Literal["OPEN", "CLAIMED", "COMPLETED", "CANCELLED"]
+    payload: Optional[Dict[str, Any]] = None
+
+
+class SourceEntity(BaseModel):
+    name: str = Field(..., min_length=1, max_length=256)
+    entity_type: str = Field(..., min_length=1, max_length=64)
+    description: str = Field(default="", max_length=2000)
+    relation: str = Field(default="mentions", max_length=64)
+
+
+class SourceRelationship(BaseModel):
+    source_name: str = Field(..., min_length=1, max_length=256)
+    source_type: str = Field(..., min_length=1, max_length=64)
+    target_name: str = Field(..., min_length=1, max_length=256)
+    target_type: str = Field(..., min_length=1, max_length=64)
+    relation: str = Field(..., min_length=1, max_length=64)
+
+
+class KnowledgeSourceRequest(BaseModel):
+    tenant_id: str = Field(default="tenant_project_alpha", min_length=1, max_length=128)
+    user_id: str = Field(default="demo_user", min_length=1, max_length=128)
+    source_type: Literal["DOCUMENT", "TICKET", "CHAT"]
+    source_id: str = Field(..., min_length=1, max_length=256)
+    title: str = Field(..., min_length=1, max_length=500)
+    content: str = Field(..., min_length=1, max_length=30000)
+    source_url: Optional[str] = Field(default=None, max_length=2000)
+    modified_at: Optional[str] = None
+    entities: List[SourceEntity] = Field(default_factory=list, max_length=100)
+    relationships: List[SourceRelationship] = Field(default_factory=list, max_length=100)
+
+
+class CompanyQuestionRequest(BaseModel):
+    tenant_id: str = Field(default="tenant_project_alpha", min_length=1, max_length=128)
+    question: str = Field(..., min_length=3, max_length=2000)
+    limit: int = Field(default=8, ge=1, le=25)
+
+
+memory_service = AgentMemoryService(db_client)
 
 
 # ==============================================================================
@@ -207,11 +291,106 @@ async def get_graph_state_endpoint(
     }
 
 
+# ======================================================================
+# REST Endpoints: Persistent Agent Memory + Company Brain
+# ======================================================================
+
+@app.post("/api/memory/records")
+def write_memory_endpoint(request: MemoryWriteRequest) -> Dict[str, Any]:
+    """Create or update one idempotent episodic, semantic, or procedural memory."""
+    return memory_service.write_memory(**request.model_dump())
+
+
+@app.get("/api/memory/records")
+def recall_memory_endpoint(
+    tenant_id: str = Query(default="tenant_project_alpha", min_length=1, max_length=128),
+    user_id: str = Query(default="demo_user", min_length=1, max_length=128),
+    memory_type: Optional[Literal["EPISODIC", "SEMANTIC", "PROCEDURAL"]] = None,
+    session_id: Optional[str] = None,
+    conversation_id: Optional[str] = None,
+    limit: int = Query(default=50, ge=1, le=200),
+) -> Dict[str, Any]:
+    """Recall recent memory scoped to both the selected graph and user key."""
+    records = memory_service.recall(tenant_id=tenant_id, user_id=user_id,
+                                    memory_type=memory_type, session_id=session_id,
+                                    conversation_id=conversation_id, limit=limit)
+    return {"tenant_id": tenant_id, "user_id": user_id, "records": records, "count": len(records)}
+
+
+@app.get("/api/memory/conversations/{conversation_id}")
+def get_conversation_history_endpoint(
+    conversation_id: str,
+    tenant_id: str = Query(default="tenant_project_alpha", min_length=1, max_length=128),
+    user_id: str = Query(default="demo_user", min_length=1, max_length=128),
+    limit: int = Query(default=100, ge=1, le=200),
+) -> Dict[str, Any]:
+    """Return durable conversation turns, ordered oldest to newest for replay."""
+    records = memory_service.recall(tenant_id=tenant_id, user_id=user_id,
+                                    memory_type="EPISODIC", conversation_id=conversation_id,
+                                    limit=limit)
+    records.sort(key=lambda record: record.get("created_at") or "")
+    return {"tenant_id": tenant_id, "user_id": user_id,
+            "conversation_id": conversation_id, "messages": records}
+
+
+@app.post("/api/memory/handoffs")
+def create_handoff_endpoint(request: HandoffCreateRequest) -> Dict[str, Any]:
+    """Create an idempotent shared-state package for the next agent."""
+    return memory_service.create_handoff(**request.model_dump())
+
+
+@app.get("/api/memory/handoffs")
+def list_handoffs_endpoint(
+    tenant_id: str = Query(default="tenant_project_alpha", min_length=1, max_length=128),
+    user_id: str = Query(default="demo_user", min_length=1, max_length=128),
+    status: Optional[Literal["OPEN", "CLAIMED", "COMPLETED", "CANCELLED"]] = None,
+    limit: int = Query(default=50, ge=1, le=200),
+) -> Dict[str, Any]:
+    handoffs = memory_service.list_handoffs(tenant_id=tenant_id, user_id=user_id,
+                                           status=status, limit=limit)
+    return {"tenant_id": tenant_id, "user_id": user_id, "handoffs": handoffs}
+
+
+@app.patch("/api/memory/handoffs/{handoff_id}")
+def update_handoff_endpoint(handoff_id: str, request: HandoffUpdateRequest) -> Dict[str, Any]:
+    """Change handoff status only when the caller's version is still current."""
+    result = memory_service.update_handoff(tenant_id=request.tenant_id, user_id=request.user_id,
+                                          handoff_id=handoff_id,
+                                          expected_version=request.expected_version,
+                                          status=request.status, payload=request.payload)
+    if result is None:
+        raise HTTPException(status_code=409,
+                            detail="Handoff not found or version is stale; reload it before updating.")
+    return result
+
+
+@app.post("/api/company/sources")
+def ingest_company_source_endpoint(request: KnowledgeSourceRequest) -> Dict[str, Any]:
+    """Upsert a document, ticket, or chat excerpt with entity and relationship provenance."""
+    return memory_service.ingest_source(
+        tenant_id=request.tenant_id, user_id=request.user_id,
+        source_type=request.source_type, source_id=request.source_id,
+        title=request.title, content=request.content, source_url=request.source_url,
+        modified_at=request.modified_at,
+        entities=[entity.model_dump() for entity in request.entities],
+        relationships=[link.model_dump() for link in request.relationships],
+    )
+
+
+@app.post("/api/company/ask")
+def ask_company_endpoint(request: CompanyQuestionRequest) -> Dict[str, Any]:
+    """Answer from tenant graph evidence and return its connected source paths."""
+    return memory_service.ask_company(tenant_id=request.tenant_id,
+                                      question=request.question, limit=request.limit)
+
+
 # ==============================================================================
 # SSE Endpoints: Real-Time Multi-Agent Streaming
 # ==============================================================================
 
-async def _stream_scenario_runner(runner_fn: Callable[..., Any], tenant_id: str) -> EventSourceResponse:
+async def _stream_scenario_runner(runner_fn: Callable[..., Any], tenant_id: str,
+                                  user_id: str = "demo_user",
+                                  runner_kwargs: Optional[Dict[str, Any]] = None) -> EventSourceResponse:
     """
     Execute a synchronous LangGraph swarm runner in a background thread while
     streaming each emitted SSE event in real-time over HTTP EventSource.
@@ -220,6 +399,18 @@ async def _stream_scenario_runner(runner_fn: Callable[..., Any], tenant_id: str)
     loop = asyncio.get_running_loop()
 
     def event_listener(event: Any) -> None:
+        if getattr(event, "event_type", None) == "SESSION_COMPLETE":
+            try:
+                memory_service.write_memory(
+                    tenant_id=tenant_id, user_id=user_id, memory_type="EPISODIC",
+                    content=event.final_summary, summary=event.final_summary[:500],
+                    agent_id=runner_fn.__name__, session_id=event.session_id,
+                    idempotency_key=f"run:{event.session_id}",
+                    metadata={"status": str(event.status), "scenario": runner_fn.__name__},
+                )
+            except Exception:
+                # A memory persistence hiccup must not interrupt the live run stream.
+                logger.exception("Could not persist completed run memory for %s", event.session_id)
         loop.call_soon_threadsafe(queue.put_nowait, event)
 
     async def worker() -> None:
@@ -229,6 +420,7 @@ async def _stream_scenario_runner(runner_fn: Callable[..., Any], tenant_id: str)
                 tenant_id=tenant_id,
                 listener=event_listener,
                 client=db_client,
+                **(runner_kwargs or {}),
             )
         except Exception as exc:
             logger.exception("Error executing swarm runner background task: %s", exc)
@@ -263,31 +455,47 @@ async def _stream_scenario_runner(runner_fn: Callable[..., Any], tenant_id: str)
 @app.get("/api/stream/scenario-a/session-1")
 async def stream_scenario_a_session_1(
     tenant_id: str = Query(default="tenant_project_alpha", description="Target tenant graph namespace"),
+    user_id: str = Query(default="demo_user", min_length=1, max_length=128),
 ) -> EventSourceResponse:
     """
     Stream Scenario A Session 1: IngestionSubagent experiences HTTP 410,
     executes atomic Graph Stigmergy, and heals execution route to /v3/oauth/token.
     """
-    return await _stream_scenario_runner(run_scenario_a_session_1, tenant_id=tenant_id)
+    return await _stream_scenario_runner(run_scenario_a_session_1, tenant_id=tenant_id, user_id=user_id)
 
 
 @app.get("/api/stream/scenario-a/session-2")
 async def stream_scenario_a_session_2(
     tenant_id: str = Query(default="tenant_project_alpha", description="Target tenant graph namespace"),
+    user_id: str = Query(default="demo_user", min_length=1, max_length=128),
 ) -> EventSourceResponse:
     """
     Stream Scenario A Session 2: BillingSubagent in a brand-new session inherits
     the failure provenance from Session 1 and zero-shots /v3/oauth/token.
     """
-    return await _stream_scenario_runner(run_scenario_a_session_2, tenant_id=tenant_id)
+    return await _stream_scenario_runner(run_scenario_a_session_2, tenant_id=tenant_id, user_id=user_id)
 
 
 @app.get("/api/stream/scenario-b/guardrail")
 async def stream_scenario_b_guardrail(
     tenant_id: str = Query(default="tenant_project_alpha", description="Target tenant graph namespace"),
+    user_id: str = Query(default="demo_user", min_length=1, max_length=128),
 ) -> EventSourceResponse:
     """
     Stream Scenario B: ArchitectAgent inspects PaymentRetryWorker, triggers
     the 3-hop constraint guardrail, and halts destructive batch refactor.
     """
-    return await _stream_scenario_runner(run_scenario_b_refactor_guardrail, tenant_id=tenant_id)
+    return await _stream_scenario_runner(run_scenario_b_refactor_guardrail, tenant_id=tenant_id, user_id=user_id)
+
+
+@app.get("/api/stream/agent-handoff")
+async def stream_agent_handoff(
+    tenant_id: str = Query(default="tenant_project_alpha", min_length=1, max_length=128),
+    user_id: str = Query(default="demo_user", min_length=1, max_length=128),
+    question: str = Query(..., min_length=3, max_length=2000),
+) -> EventSourceResponse:
+    """Stream ContextAgent -> durable handoff -> ResearchAgent resume as one LangGraph run."""
+    return await _stream_scenario_runner(
+        run_agent_handoff_workflow, tenant_id=tenant_id, user_id=user_id,
+        runner_kwargs={"user_id": user_id, "question": question},
+    )

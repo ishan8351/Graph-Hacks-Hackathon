@@ -8,6 +8,7 @@ import ExplainDecisionDrawer from "./ExplainDecisionDrawer";
 import CypherPlaygroundModal from "./CypherPlaygroundModal";
 import SessionHistoryModal, { SessionRecord } from "./SessionHistoryModal";
 import ArchitectureGuideModal from "./ArchitectureGuideModal";
+import CompanyBrainModal from "./CompanyBrainModal";
 import {
   MemoryLayerEvent,
   GuardrailTriggeredEvent,
@@ -21,6 +22,7 @@ const SCENARIO_TITLES: Record<string, string> = {
   "scenario-a1": "Act 1: Session 1 (410 Gone & Stigmergy)",
   "scenario-a2": "Act 1: Session 2 (Zero-Shot Self-Healing Route)",
   "scenario-b": "Act 2: Refactor PaymentRetryWorker (3-Hop Guardrail)",
+  "custom-agent-question": "Custom agent question",
 };
 
 export default function Dashboard() {
@@ -44,6 +46,7 @@ export default function Dashboard() {
   const [isPlaygroundOpen, setIsPlaygroundOpen] = useState<boolean>(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
   const [isGuideOpen, setIsGuideOpen] = useState<boolean>(false);
+  const [isBrainOpen, setIsBrainOpen] = useState<boolean>(false);
 
   // Session history state
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
@@ -150,7 +153,7 @@ export default function Dashboard() {
   };
 
   // Start Real-Time SSE Stream for a scenario
-  const startScenarioStream = useCallback((streamEndpoint: string, scenarioId: string) => {
+  const startScenarioStream = useCallback((streamEndpoint: string, scenarioId: string, params: Record<string, string> = {}, displayName?: string) => {
     if (activeEventSource.current) {
       activeEventSource.current.close();
     }
@@ -160,7 +163,8 @@ export default function Dashboard() {
     setActiveScenario(scenarioId);
     setConnectionStatus("live");
 
-    const sseUrl = `${API_BASE}${streamEndpoint}?tenant_id=${tenant}`;
+    const search = new URLSearchParams({ tenant_id: tenant, ...params });
+    const sseUrl = `${API_BASE}${streamEndpoint}?${search.toString()}`;
     const es = new EventSource(sseUrl);
     activeEventSource.current = es;
 
@@ -219,7 +223,7 @@ export default function Dashboard() {
 
           saveSession({
             id: `run_${Date.now()}`,
-            scenarioName: SCENARIO_TITLES[scenarioId] || scenarioId,
+            scenarioName: displayName || SCENARIO_TITLES[scenarioId] || scenarioId,
             scenarioId,
             tenant,
             timestamp: new Date().toISOString(),
@@ -254,6 +258,13 @@ export default function Dashboard() {
     };
   }, [tenant, fetchGraphState, saveSession]);
 
+  const askAgents = (message: string) => {
+    startScenarioStream("/api/stream/agent-handoff", "custom-agent-question", {
+      user_id: "demo_user",
+      question: message,
+    }, message.length > 72 ? `${message.slice(0, 69)}…` : message);
+  };
+
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -267,6 +278,7 @@ export default function Dashboard() {
         setIsPlaygroundOpen(false);
         setIsHistoryOpen(false);
         setIsGuideOpen(false);
+        setIsBrainOpen(false);
       } else if (e.key === "1" && !isRunning) {
         startScenarioStream("/api/stream/scenario-a/session-1", "scenario-a1");
       } else if (e.key === "2" && !isRunning) {
@@ -306,6 +318,7 @@ export default function Dashboard() {
         onOpenPlayground={() => setIsPlaygroundOpen(true)}
         onOpenHistory={() => setIsHistoryOpen(true)}
         onOpenGuide={() => setIsGuideOpen(true)}
+        onOpenBrain={() => setIsBrainOpen(true)}
       />
 
       {/* Split-Screen Main Workspace */}
@@ -314,6 +327,8 @@ export default function Dashboard() {
         <section className="ledger-pane" aria-label="Agent activity">
           <AgentFeed
             events={events}
+            isRunning={isRunning}
+            onSubmitAgentMessage={askAgents}
             onOpenExplainDrawer={(gr) => {
               setGuardrailEvent(gr);
               setIsDrawerOpen(true);
@@ -344,6 +359,10 @@ export default function Dashboard() {
           isOpen={isPlaygroundOpen}
           onClose={() => setIsPlaygroundOpen(false)}
           tenantId={tenant}
+          onGraphChanged={(graphId) => {
+            if (graphId !== tenant) setTenant(graphId);
+            fetchGraphState(graphId);
+          }}
         />
 
         {/* Session History Modal */}
@@ -368,6 +387,13 @@ export default function Dashboard() {
         <ArchitectureGuideModal
           isOpen={isGuideOpen}
           onClose={() => setIsGuideOpen(false)}
+        />
+
+        <CompanyBrainModal
+          isOpen={isBrainOpen}
+          onClose={() => setIsBrainOpen(false)}
+          tenantId={tenant}
+          onGraphChanged={() => fetchGraphState(tenant)}
         />
       </main>
     </div>

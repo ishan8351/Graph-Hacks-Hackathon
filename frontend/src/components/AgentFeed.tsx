@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, FormEvent, KeyboardEvent } from "react";
 import {
   Terminal,
   Bot,
@@ -15,6 +15,7 @@ import {
   ExternalLink,
   Activity,
   Layers,
+  Send,
 } from "lucide-react";
 import {
   MemoryLayerEvent,
@@ -28,11 +29,14 @@ import {
 interface AgentFeedProps {
   events: MemoryLayerEvent[];
   onOpenExplainDrawer: (event: GuardrailTriggeredEvent) => void;
+  onSubmitAgentMessage: (message: string) => void;
+  isRunning: boolean;
 }
 
-export default function AgentFeed({ events, onOpenExplainDrawer }: AgentFeedProps) {
+export default function AgentFeed({ events, onOpenExplainDrawer, onSubmitAgentMessage, isRunning }: AgentFeedProps) {
   const [activeTab, setActiveTab] = useState<"feed" | "waterfall">("feed");
   const [expandedMcp, setExpandedMcp] = useState<Record<string, boolean>>({});
+  const [draft, setDraft] = useState("");
   const feedEndRef = useRef<HTMLDivElement | null>(null);
 
   const toggleMcp = (id: string) => {
@@ -49,6 +53,21 @@ export default function AgentFeed({ events, onOpenExplainDrawer }: AgentFeedProp
   const mcpCalls = events.filter((e) => e.event_type === "MCP_TOOL_CALL") as McpToolCallEvent[];
   const maxLatency = Math.max(...mcpCalls.map((c) => c.latency_ms || 1), 1);
   const totalLatency = mcpCalls.reduce((acc, c) => acc + (c.latency_ms || 0), 0);
+
+  const submitMessage = (event: FormEvent) => {
+    event.preventDefault();
+    const message = draft.trim();
+    if (!message || isRunning) return;
+    onSubmitAgentMessage(message);
+    setDraft("");
+  };
+
+  const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
+  };
 
   return (
     <div className="activity-ledger flex flex-col h-full overflow-hidden">
@@ -94,9 +113,9 @@ export default function AgentFeed({ events, onOpenExplainDrawer }: AgentFeedProp
               <div className="p-3 rounded-full bg-slate-900 border border-slate-800 text-slate-600">
                 <Bot className="w-8 h-8" />
               </div>
-              <p className="text-sm font-medium text-slate-400">No active agent execution</p>
+              <p className="text-sm font-medium text-slate-400">Ready when you are</p>
               <p className="text-xs max-w-xs text-slate-500">
-                Select one of the scenario buttons in the top navbar to trigger real-time multi-agent reasoning.
+                The numbered controls above run prepared demonstrations. To ask your own question, use the message box below.
               </p>
             </div>
           ) : (
@@ -165,7 +184,7 @@ export default function AgentFeed({ events, onOpenExplainDrawer }: AgentFeedProp
                       {isExpanded && mcpEvt.cypher_executed && (
                         <div className="px-3 pb-3 pt-1 border-t border-indigo-900/30 bg-black/40 space-y-1.5">
                           <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
-                            FalkorDB Cypher Traversal
+                            FalkorDB Cypher query
                           </span>
                           <pre className="text-[11px] font-mono text-cyan-300 p-2.5 rounded-lg bg-black/60 border border-slate-800 overflow-x-auto whitespace-pre-wrap leading-relaxed">
                             {mcpEvt.cypher_executed}
@@ -210,11 +229,11 @@ export default function AgentFeed({ events, onOpenExplainDrawer }: AgentFeedProp
                   return (
                     <div
                       key={gr.event_id || idx}
-                      className="p-4 rounded-xl border border-amber-500/40 bg-amber-950/30 space-y-3 shadow-lg shadow-amber-950/20"
+                      className="p-4 rounded-xl border border-amber-500/40 bg-amber-950/30 space-y-3"
                     >
                       <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
                         <ShieldAlert className="w-5 h-5 text-amber-400" />
-                        <span>GUARDRAIL_TRIGGERED</span>
+                        <span>Refactor safety check</span>
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 ml-auto font-mono">
                           {gr.decision_id}
                         </span>
@@ -225,14 +244,14 @@ export default function AgentFeed({ events, onOpenExplainDrawer }: AgentFeedProp
                           <span className="font-mono text-purple-300 font-bold">{gr.decision_id}</span> ({gr.jira_ticket}).
                         </p>
                         <p className="text-slate-400 text-[11px]">
-                          Owner: <span className="text-slate-200 font-semibold">{gr.engineer_owner}</span> (Staff Systems Architect)
+                          Review author: <span className="text-slate-200 font-semibold">{gr.engineer_owner}</span>
                         </p>
                       </div>
                       <button
                         onClick={() => onOpenExplainDrawer(gr)}
                         className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 transition"
                       >
-                        <span>Explain Decision Path</span>
+                        <span>View evidence path</span>
                         <ExternalLink className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -283,7 +302,7 @@ export default function AgentFeed({ events, onOpenExplainDrawer }: AgentFeedProp
 
             {mcpCalls.length === 0 ? (
               <div className="text-center py-10 text-slate-500 text-xs">
-                No FastMCP tool calls recorded yet.
+                No tool calls recorded yet.
               </div>
             ) : (
               mcpCalls.map((call, idx) => {
@@ -325,6 +344,17 @@ export default function AgentFeed({ events, onOpenExplainDrawer }: AgentFeedProp
           </div>
         )}
       </div>
+      <form className="agent-message-composer" onSubmit={submitMessage}>
+        <label htmlFor="agent-message">Ask the graph agents</label>
+        <textarea id="agent-message" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown}
+          rows={2} maxLength={2000} placeholder="Ask about a person, project, decision, or risk…" disabled={isRunning}
+          aria-describedby="agent-message-help" />
+        <div className="agent-composer-footer"><span id="agent-message-help">Answers use this graph’s evidence. Press Enter to send; Shift+Enter for a new line.</span>
+          <button className="agent-message-submit" type="submit" disabled={isRunning || draft.trim().length < 3}>
+            <Send size={14} />{isRunning ? "Working…" : "Ask agents"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

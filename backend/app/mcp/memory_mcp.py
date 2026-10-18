@@ -22,6 +22,7 @@ import uuid
 from mcp.server.fastmcp import FastMCP
 
 from app.db.graph_client import FalkorDBClient
+from app.services.agent_memory import AgentMemoryService
 
 # FastMCP Server Instance
 mcp = FastMCP("ActiveEngineeringMemory")
@@ -405,3 +406,64 @@ def find_domain_expert(module_name: str, tenant_id: str = "active_memory_default
     """
     controller = MemoryContextController()
     return controller.find_domain_expert(module_name=module_name, tenant_id=tenant_id)
+
+
+@mcp.tool()
+def remember(
+    content: str,
+    memory_type: str,
+    user_id: str,
+    agent_id: str,
+    idempotency_key: str,
+    tenant_id: str = "active_memory_default",
+    session_id: Optional[str] = None,
+    conversation_id: Optional[str] = None,
+    source_id: Optional[str] = None,
+    summary: Optional[str] = None,
+    confidence: float = 1.0,
+) -> Dict[str, Any]:
+    """Persist episodic, semantic, or procedural memory for other agents to recall."""
+    if memory_type not in {"EPISODIC", "SEMANTIC", "PROCEDURAL"}:
+        raise ValueError("memory_type must be EPISODIC, SEMANTIC, or PROCEDURAL")
+    service = AgentMemoryService(FalkorDBClient())
+    return service.write_memory(tenant_id=tenant_id, user_id=user_id,
+                                memory_type=memory_type, content=content,
+                                agent_id=agent_id, idempotency_key=idempotency_key,
+                                session_id=session_id, conversation_id=conversation_id,
+                                source_id=source_id, summary=summary,
+                                confidence=confidence)
+
+
+@mcp.tool()
+def recall(
+    user_id: str,
+    tenant_id: str = "active_memory_default",
+    memory_type: Optional[str] = None,
+    session_id: Optional[str] = None,
+    conversation_id: Optional[str] = None,
+    limit: int = 20,
+) -> Dict[str, Any]:
+    """Retrieve tenant- and user-scoped memory for an agent resuming work."""
+    service = AgentMemoryService(FalkorDBClient())
+    records = service.recall(tenant_id=tenant_id, user_id=user_id,
+                             memory_type=memory_type, session_id=session_id,
+                             conversation_id=conversation_id, limit=max(1, min(limit, 100)))
+    return {"tenant_id": tenant_id, "user_id": user_id, "records": records}
+
+
+@mcp.tool()
+def handoff_to_agent(
+    user_id: str,
+    from_agent: str,
+    to_agent: str,
+    task: str,
+    payload: Dict[str, Any],
+    idempotency_key: str,
+    tenant_id: str = "active_memory_default",
+) -> Dict[str, Any]:
+    """Create shared, durable task context that a named agent can claim and resume."""
+    service = AgentMemoryService(FalkorDBClient())
+    return service.create_handoff(tenant_id=tenant_id, user_id=user_id,
+                                  from_agent=from_agent, to_agent=to_agent,
+                                  task=task, payload=payload,
+                                  idempotency_key=idempotency_key)

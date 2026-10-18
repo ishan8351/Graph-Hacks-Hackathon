@@ -18,6 +18,7 @@ Core Scenarios Implemented:
 """
 
 from typing import Any, Callable, Dict, List, Optional, TypedDict
+import json
 import uuid
 
 from langgraph.graph import StateGraph, START, END
@@ -33,6 +34,7 @@ from app.models.events import (
     SessionStatus,
 )
 from app.services.fake_api_gateway import FakeMicroserviceGateway, DeprecatedAPIError
+from app.services.agent_memory import AgentMemoryService
 
 # Optional callback type for real-time SSE streaming
 EventListener = Callable[[Any], None]
@@ -51,6 +53,10 @@ class SwarmState(TypedDict):
     active_endpoint: Optional[str]
     guardrail_halted: bool
     final_outcome: Optional[str]
+    user_id: str
+    question: str
+    answer: Optional[Dict[str, Any]]
+    handoff_id: Optional[str]
 
 
 def _emit_event(state: SwarmState, event: Any, listener: Optional[EventListener] = None) -> None:
@@ -419,7 +425,16 @@ def complete_session_node(
 
     state["final_outcome"] = outcome.value
 
-    if outcome == SessionStatus.BLOCKED_BY_GUARDRAIL:
+    if state.get("scenario_type") == "agent_handoff":
+        answer = state.get("answer") or {}
+        citations = answer.get("citations") or []
+        source_list = ", ".join(
+            f"{item.get('title') or item.get('source_id')} [{item.get('source_id')}]"
+            for item in citations[:5]
+        ) or "No matching source citations"
+        summary = (f"ResearchAgent resumed the handoff and answered:\n{answer.get('answer') or 'No graph answer was found.'}\n\n"
+                   f"Sources: {source_list}")
+    elif outcome == SessionStatus.BLOCKED_BY_GUARDRAIL:
         summary = (
             "Refactor blocked by Active Engineering Guardrail. PaymentRetryWorker is governed by ADR dec_19 "
             "(SUBOPTIMAL_WORKAROUND) authored by Aarav for incident postmortem PAY-409. Synchronous single-item "
@@ -442,6 +457,121 @@ def complete_session_node(
         final_summary=summary,
     )
     _emit_event(state, term_evt, listener)
+    return state
+
+
+def agent_a_prepare_handoff(
+    state: SwarmState,
+    memory: AgentMemoryService,
+    listener: Optional[EventListener] = None,
+) -> SwarmState:
+    """Agent A retrieves evidence, saves an episode, then persists a handoff packet."""
+    sid, tenant_id, user_id = state["session_id"], state["tenant_id"], state["user_id"]
+    question = state["question"]
+    _emit_event(state, AgentStepEvent(
+        session_id=sid, agent_name="ContextAgent",
+        thought="Searching tenant graph evidence and recording the retrieval so a fresh agent can resume it.",
+        action="ask_company_and_write_episode",
+    ), listener)
+    answer = memory.ask_company(tenant_id=tenant_id, question=question)
+    state["answer"] = answer
+    _emit_event(state, McpToolCallEvent(
+        session_id=sid, tool_name="company_graph_recall",
+        arguments={"tenant_id": tenant_id, "question": question, "citations": len(answer.get("citations", []))},
+        latency_ms=0.0,
+    ), listener)
+    episode = memory.write_memory(
+        tenant_id=tenant_id, user_id=user_id, memory_type="EPISODIC",
+        content=answer.get("answer", "No graph answer was found."),
+        summary=f"Company evidence lookup: {question[:180]}", agent_id="ContextAgent",
+        idempotency_key=f"handoff-demo:{sid}:context", session_id=sid,
+        metadata={"question": question, "citations": answer.get("citations", []),
+                  "evidence_paths": answer.get("evidence_paths", []), "answer_mode": answer.get("answer_mode")},
+    )
+    handoff = memory.create_handoff(
+        tenant_id=tenant_id, user_id=user_id, from_agent="ContextAgent", to_agent="ResearchAgent",
+        task=question,
+        payload={"session_id": sid, "memory_id": episode.get("id"), "question": question,
+                 "answer": answer.get("answer"), "citations": answer.get("citations", []),
+                 "evidence_paths": answer.get("evidence_paths", []), "answer_mode": answer.get("answer_mode")},
+        idempotency_key=f"langgraph-resume:{sid}",
+    )
+    state["handoff_id"] = handoff.get("id")
+    _emit_event(state, McpToolCallEvent(
+        session_id=sid, tool_name="create_handoff",
+        arguments={"handoff_id": handoff.get("id"), "to_agent": "ResearchAgent", "version": handoff.get("version")},
+        latency_ms=0.0,
+    ), listener)
+    _emit_event(state, AgentStepEvent(
+        session_id=sid, agent_name="ContextAgent",
+        thought=f"Saved the answer, citations, and memory reference in handoff {handoff.get('id')}.",
+        action="yield_to_ResearchAgent",
+    ), listener)
+    return state
+
+
+def agent_b_resume_handoff(
+    state: SwarmState,
+    memory: AgentMemoryService,
+    listener: Optional[EventListener] = None,
+) -> SwarmState:
+    """Agent B claims the persisted handoff, recalls Agent A's episode, and completes it."""
+    sid, tenant_id, user_id = state["session_id"], state["tenant_id"], state["user_id"]
+    handoff_id = state.get("handoff_id")
+    _emit_event(state, AgentStepEvent(
+        session_id=sid, agent_name="ResearchAgent",
+        thought="Starting as a separate agent identity; loading and claiming the shared task packet.",
+        action="claim_handoff_and_recall_memory",
+    ), listener)
+    handoffs = memory.list_handoffs(tenant_id=tenant_id, user_id=user_id, limit=20)
+    handoff = next((item for item in handoffs if item.get("id") == handoff_id), None)
+    if not handoff:
+        raise RuntimeError(f"Persisted handoff {handoff_id} could not be reloaded")
+    claimed = memory.update_handoff(
+        tenant_id=tenant_id, user_id=user_id, handoff_id=handoff_id,
+        expected_version=int(handoff.get("version", 1)), status="CLAIMED",
+    )
+    if not claimed:
+        raise RuntimeError("Handoff changed before ResearchAgent could claim it")
+    _emit_event(state, McpToolCallEvent(
+        session_id=sid, tool_name="claim_handoff",
+        arguments={"handoff_id": handoff_id, "version": claimed.get("version")}, latency_ms=0.0,
+    ), listener)
+    prior = memory.recall(tenant_id=tenant_id, user_id=user_id,
+                          session_id=sid, memory_type="EPISODIC", limit=20)
+    _emit_event(state, McpToolCallEvent(
+        session_id=sid, tool_name="recall_agent_memory",
+        arguments={"session_id": sid, "records_found": len(prior)}, latency_ms=0.0,
+    ), listener)
+    payload = claimed.get("payload") or handoff.get("payload") or {}
+    answer = state.get("answer") or {}
+    citations = answer.get("citations") or payload.get("citations") or []
+    episode = next((record for record in prior if record.get("id") == payload.get("memory_id")), None)
+    if not episode:
+        raise RuntimeError("ResearchAgent could not recall the episode referenced by the handoff")
+    # The second agent resumes from persisted state and validates its source list against that packet.
+    resumed = {**answer, "answer": episode.get("content") or payload.get("answer") or "No answer was saved.",
+               "citations": citations, "answer_mode": payload.get("answer_mode", "graph"),
+               "resumed_by": "ResearchAgent"}
+    state["answer"] = resumed
+    completed_payload = {**payload, "resumed_by": "ResearchAgent", "resumed_at_session": sid,
+                         "result": resumed.get("answer")}
+    completed = memory.update_handoff(
+        tenant_id=tenant_id, user_id=user_id, handoff_id=handoff_id,
+        expected_version=int(claimed.get("version", 2)), status="COMPLETED", payload=completed_payload,
+    )
+    if not completed:
+        raise RuntimeError("Handoff changed before ResearchAgent could complete it")
+    _emit_event(state, McpToolCallEvent(
+        session_id=sid, tool_name="complete_handoff",
+        arguments={"handoff_id": handoff_id, "version": completed.get("version")}, latency_ms=0.0,
+    ), listener)
+    _emit_event(state, AgentStepEvent(
+        session_id=sid, agent_name="ResearchAgent",
+        thought=f"Resumed the saved episode and returned its answer with {len(citations)} persisted citations.",
+        action="return_resumed_answer",
+    ), listener)
+    state["final_outcome"] = "SUCCESS"
     return state
 
 
@@ -478,11 +608,21 @@ def build_swarm_graph(
     def node_complete(s: SwarmState) -> SwarmState:
         return complete_session_node(s, listener)
 
+    memory = AgentMemoryService(ctrl.client)
+
+    def node_agent_a(s: SwarmState) -> SwarmState:
+        return agent_a_prepare_handoff(s, memory, listener)
+
+    def node_agent_b(s: SwarmState) -> SwarmState:
+        return agent_b_resume_handoff(s, memory, listener)
+
     workflow.add_node("scenario_a_s1_investigate", node_s1_investigate)
     workflow.add_node("scenario_a_s1_execute", node_s1_execute)
     workflow.add_node("scenario_a_s2_execute", node_s2_execute)
     workflow.add_node("scenario_b_guardrail", node_b_guardrail)
     workflow.add_node("complete_session", node_complete)
+    workflow.add_node("agent_a_prepare_handoff", node_agent_a)
+    workflow.add_node("agent_b_resume_handoff", node_agent_b)
 
     # Scenario router from START
     def route_scenario(s: SwarmState) -> str:
@@ -493,6 +633,8 @@ def build_swarm_graph(
             return "scenario_a_s2_execute"
         elif scen == "scenario_b":
             return "scenario_b_guardrail"
+        elif scen == "agent_handoff":
+            return "agent_a_prepare_handoff"
         raise ValueError(f"Unknown scenario_type: {scen}")
 
     workflow.add_conditional_edges(
@@ -502,6 +644,7 @@ def build_swarm_graph(
             "scenario_a_s1_investigate": "scenario_a_s1_investigate",
             "scenario_a_s2_execute": "scenario_a_s2_execute",
             "scenario_b_guardrail": "scenario_b_guardrail",
+            "agent_a_prepare_handoff": "agent_a_prepare_handoff",
         },
     )
 
@@ -509,6 +652,8 @@ def build_swarm_graph(
     workflow.add_edge("scenario_a_s1_execute", "complete_session")
     workflow.add_edge("scenario_a_s2_execute", "complete_session")
     workflow.add_edge("scenario_b_guardrail", "complete_session")
+    workflow.add_edge("agent_a_prepare_handoff", "agent_b_resume_handoff")
+    workflow.add_edge("agent_b_resume_handoff", "complete_session")
     workflow.add_edge("complete_session", END)
 
     return workflow.compile()
@@ -536,6 +681,10 @@ def run_scenario_a_session_1(
         "active_endpoint": None,
         "guardrail_halted": False,
         "final_outcome": None,
+        "user_id": "demo_user",
+        "question": "",
+        "answer": None,
+        "handoff_id": None,
     }
     controller = MemoryContextController(client=client)
     app = build_swarm_graph(controller=controller, listener=listener)
@@ -560,6 +709,10 @@ def run_scenario_a_session_2(
         "active_endpoint": None,
         "guardrail_halted": False,
         "final_outcome": None,
+        "user_id": "demo_user",
+        "question": "",
+        "answer": None,
+        "handoff_id": None,
     }
     controller = MemoryContextController(client=client)
     app = build_swarm_graph(controller=controller, listener=listener)
@@ -589,6 +742,32 @@ def run_scenario_b_refactor_guardrail(
         "active_endpoint": "/v1/charge/sync",
         "guardrail_halted": False,
         "final_outcome": None,
+        "user_id": "demo_user",
+        "question": "",
+        "answer": None,
+        "handoff_id": None,
+    }
+    controller = MemoryContextController(client=client)
+    app = build_swarm_graph(controller=controller, listener=listener)
+    return app.invoke(initial_state)
+
+
+def run_agent_handoff_workflow(
+    tenant_id: str = "tenant_project_alpha",
+    user_id: str = "demo_user",
+    question: str = "Who owns PaymentRetryWorker, and why is batching unsafe?",
+    session_id: Optional[str] = None,
+    listener: Optional[EventListener] = None,
+    client: Optional[FalkorDBClient] = None,
+) -> SwarmState:
+    """Run two distinct LangGraph agent nodes through a durable, versioned resume handoff."""
+    sid = session_id or f"sess_handoff_{uuid.uuid4().hex[:8]}"
+    initial_state: SwarmState = {
+        "session_id": sid, "scenario_type": "agent_handoff", "tenant_id": tenant_id,
+        "target_module": "CompanyBrain", "messages": [{"role": "user", "content": question}],
+        "events_emitted": [], "active_endpoint": None, "guardrail_halted": False,
+        "final_outcome": None, "user_id": user_id, "question": question,
+        "answer": None, "handoff_id": None,
     }
     controller = MemoryContextController(client=client)
     app = build_swarm_graph(controller=controller, listener=listener)

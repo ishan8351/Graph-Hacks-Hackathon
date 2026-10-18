@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Active Engineering Memory Layer",
-  description: "Real-time socio-technical graph memory powered by FalkorDB, FastMCP, LangGraph, and Next.js",
+  description: "Graph memory for developer agents using FalkorDB, FastMCP, and LangGraph",
 };
 
 export default function RootLayout({

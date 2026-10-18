@@ -72,19 +72,33 @@ class FalkorDBClient:
         host: Optional[str] = None,
         port: Optional[int] = None,
         password: Optional[str] = None,
+        username: Optional[str] = None,
+        ssl: Optional[bool] = None,
+        url: Optional[str] = None,
         default_tenant: str = "active_memory_default",
     ):
+        self.url = url or os.getenv("FALKORDB_URL", None)
         self.host = host or os.getenv("FALKORDB_HOST", "localhost")
         self.port = port or int(os.getenv("FALKORDB_PORT", "6379"))
         self.password = password or os.getenv("FALKORDB_PASSWORD", None)
+        self.username = username or os.getenv("FALKORDB_USERNAME", None)
+        if ssl is not None:
+            self.ssl = ssl
+        else:
+            self.ssl = os.getenv("FALKORDB_SSL", "false").lower() in ("true", "1", "yes")
         self.default_tenant = default_tenant
 
         # Initialize underlying FalkorDB client
-        self.db = FalkorDB(
-            host=self.host,
-            port=self.port,
-            password=self.password,
-        )
+        if self.url:
+            self.db = FalkorDB.from_url(self.url)
+        else:
+            self.db = FalkorDB(
+                host=self.host,
+                port=self.port,
+                password=self.password,
+                username=self.username,
+                ssl=self.ssl,
+            )
         self._graph_cache: Dict[str, Any] = {}
 
     def select_graph(self, tenant_id: Optional[str] = None) -> Any:
