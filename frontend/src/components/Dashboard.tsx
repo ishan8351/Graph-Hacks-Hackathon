@@ -249,7 +249,7 @@ export default function Dashboard() {
       console.warn("SSE stream ended or encountered error:", err);
       setIsRunning(false);
       setActiveScenario(null);
-      setConnectionStatus("connected");
+      setConnectionStatus("disconnected");
       es.close();
     };
   }, [tenant, fetchGraphState, saveSession]);
@@ -285,7 +285,7 @@ export default function Dashboard() {
   }, [isRunning, startScenarioStream]);
 
   return (
-    <div className="flex flex-col h-screen bg-[#070b14] text-slate-100 font-sans overflow-hidden">
+    <div className="memory-workbench">
       {/* Top Navigation Bar */}
       <TopNav
         currentTenant={tenant}
@@ -309,9 +309,9 @@ export default function Dashboard() {
       />
 
       {/* Split-Screen Main Workspace */}
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+      <main className="workspace-grid">
         {/* Left Panel: Live Multi-Agent Execution & MCP Feed */}
-        <div className="w-full md:w-5/12 lg:w-4/12 h-1/2 md:h-full flex-shrink-0">
+        <section className="ledger-pane" aria-label="Agent activity">
           <AgentFeed
             events={events}
             onOpenExplainDrawer={(gr) => {
@@ -320,17 +320,17 @@ export default function Dashboard() {
               setHighlightedNodeIds(gr.path_nodes || []);
             }}
           />
-        </div>
+        </section>
 
         {/* Right Panel: Interactive FalkorDB Knowledge Canvas */}
-        <div className="w-full md:w-7/12 lg:w-8/12 h-1/2 md:h-full flex-1">
+        <section className="map-pane" aria-label="Engineering memory graph">
           <GraphCanvas
             nodes={nodes}
             links={links}
             highlightedNodeIds={highlightedNodeIds}
             isLoading={isLoadingGraph}
           />
-        </div>
+        </section>
 
         {/* Slide-out Explainability Drawer */}
         <ExplainDecisionDrawer
@@ -369,7 +369,7 @@ export default function Dashboard() {
           isOpen={isGuideOpen}
           onClose={() => setIsGuideOpen(false)}
         />
-      </div>
+      </main>
     </div>
   );
 }

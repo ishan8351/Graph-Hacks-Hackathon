@@ -202,10 +202,10 @@ describe("Dashboard Visual Explainability Component (Phase 5 TDD)", () => {
 
     expect(screen.getByText(/Active Engineering Memory Layer/i)).toBeInTheDocument();
     expect(screen.getByRole("combobox")).toBeInTheDocument();
-    expect(screen.getByText(/Reset & Seed Graph/i)).toBeInTheDocument();
-    expect(screen.getByText(/Run Act 1: Session 1/i)).toBeInTheDocument();
-    expect(screen.getByText(/Run Act 1: Session 2/i)).toBeInTheDocument();
-    expect(screen.getByText(/Run Act 2: Refactor PaymentRetryWorker/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Reset & Seed Graph/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Run Act 1: Session 1/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Run Act 1: Session 2/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Run Act 2: Refactor PaymentRetryWorker/i })).toBeInTheDocument();
 
     // Verify initial graph state was fetched
     await waitFor(() => {
@@ -232,7 +232,7 @@ describe("Dashboard Visual Explainability Component (Phase 5 TDD)", () => {
     render(<Dashboard />);
 
     // Click Act 2 Guardrail scenario button
-    const act2Btn = screen.getByText(/Run Act 2: Refactor PaymentRetryWorker/i);
+    const act2Btn = screen.getByRole("button", { name: /Run Act 2: Refactor PaymentRetryWorker/i });
     await act(async () => {
       fireEvent.click(act2Btn);
     });
@@ -268,10 +268,26 @@ describe("Dashboard Visual Explainability Component (Phase 5 TDD)", () => {
     });
   });
 
+  it("shows a disconnected status when the scenario event stream fails", async () => {
+    render(<Dashboard />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Run Act 1: Session 1/i }));
+    });
+
+    const sse = MockEventSource.instances[MockEventSource.instances.length - 1];
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await act(async () => {
+      sse.onerror?.(new Error("stream unavailable"));
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("API unavailable");
+  });
+
   it("renders MCP Tool Call details with Cypher query snippet and latency", async () => {
     render(<Dashboard />);
 
-    const act1Btn = screen.getByText(/Run Act 1: Session 1/i);
+    const act1Btn = screen.getByRole("button", { name: /Run Act 1: Session 1/i });
     await act(async () => {
       fireEvent.click(act1Btn);
     });
@@ -301,7 +317,7 @@ describe("Dashboard Visual Explainability Component (Phase 5 TDD)", () => {
   it("updates endpoint node status to DEPRECATED when GRAPH_MUTATION event arrives", async () => {
     render(<Dashboard />);
 
-    const act1Btn = screen.getByText(/Run Act 1: Session 1/i);
+    const act1Btn = screen.getByRole("button", { name: /Run Act 1: Session 1/i });
     await act(async () => {
       fireEvent.click(act1Btn);
     });
@@ -330,7 +346,7 @@ describe("Dashboard Visual Explainability Component (Phase 5 TDD)", () => {
   it("renders SESSION_COMPLETE with FAILED status with failure alert card", async () => {
     render(<Dashboard />);
 
-    const act1Btn = screen.getByText(/Run Act 1: Session 2/i);
+    const act1Btn = screen.getByRole("button", { name: /Run Act 1: Session 2/i });
     await act(async () => {
       fireEvent.click(act1Btn);
     });
@@ -396,7 +412,7 @@ describe("Dashboard Visual Explainability Component (Phase 5 TDD)", () => {
   it("switches to MCP Timeline waterfall in AgentFeed and displays duration bar", async () => {
     render(<Dashboard />);
 
-    const act1Btn = screen.getByText(/Run Act 1: Session 1/i);
+    const act1Btn = screen.getByRole("button", { name: /Run Act 1: Session 1/i });
     await act(async () => {
       fireEvent.click(act1Btn);
     });

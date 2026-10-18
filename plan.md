@@ -1,6 +1,6 @@
 # Active Engineering Memory Layer — Project Plan
 
-> **Generated from full codebase audit** — every file in `backend/`, `frontend/`, and `contracts/` was read.
+> **Project status:** Updated alongside the submission-readiness pass on 2026-10-18. The current implementation and checks below are authoritative; older audit notes have been removed where the code has since changed.
 
 ---
 
@@ -10,7 +10,7 @@
 ┌───────────────────────────────────────────────────────────────────────┐
 │  Frontend (Next.js 15 / Port 3001)                                   │
 │  ┌──────────┐  ┌──────────────┐  ┌────────────────────────────────┐ │
-│  │  TopNav   │  │  AgentFeed   │  │ GraphCanvas (grid cards)      │ │
+│  │  TopNav   │  │  AgentFeed   │  │ GraphCanvas (React Flow)      │ │
 │  └──────────┘  └──────────────┘  └────────────────────────────────┘ │
 │  ┌──────────────────────────────────────┐                           │
 │  │  ExplainDecisionDrawer (slide-out)   │                           │
@@ -53,7 +53,7 @@
 | 1 | **Dashboard Shell** — SSE `EventSource` lifecycle, graph state fetch, real-time event dispatch, mutation/guardrail reactivity | [Dashboard.tsx](file:///home/cyber/Documents/Graph-Hacks-Hackathon/frontend/src/components/Dashboard.tsx) | ✅ Complete |
 | 2 | **TopNav** — Branding, tenant switcher, 4 action buttons (Reset, Act 1 S1, Act 1 S2, Act 2), FalkorDB status pill | [TopNav.tsx](file:///home/cyber/Documents/Graph-Hacks-Hackathon/frontend/src/components/TopNav.tsx) | ✅ Complete |
 | 3 | **AgentFeed** — Renders all 5 SSE event types with distinct card styles, expandable Cypher viewer for MCP calls, "Explain Decision Path" button | [AgentFeed.tsx](file:///home/cyber/Documents/Graph-Hacks-Hackathon/frontend/src/components/AgentFeed.tsx) | ✅ Complete |
-| 4 | **GraphCanvas** — Card-grid visualization of FalkorDB nodes, label-based filtering, color-coded badges, deprecated/active indicators, node inspector panel, 3-hop highlight | [GraphCanvas.tsx](file:///home/cyber/Documents/Graph-Hacks-Hackathon/frontend/src/components/GraphCanvas.tsx) | ✅ Complete |
+| 4 | **GraphCanvas** — Interactive React Flow canvas with relationship edges, pan/zoom, label filters, minimap, node inspector, deprecated indicators, and 3-hop highlight | [GraphCanvas.tsx](frontend/src/components/GraphCanvas.tsx) | ✅ Complete |
 | 5 | **ExplainDecisionDrawer** — Slide-out with 3-hop chain viz, VCS warning blockquote, domain expert profile, Cypher query display, outcome banner | [ExplainDecisionDrawer.tsx](file:///home/cyber/Documents/Graph-Hacks-Hackathon/frontend/src/components/ExplainDecisionDrawer.tsx) | ✅ Complete |
 | 6 | **TypeScript Event Types** — mirrors JSON Schema contract exactly | [events.ts](file:///home/cyber/Documents/Graph-Hacks-Hackathon/frontend/src/types/events.ts) | ✅ Complete |
 
@@ -63,57 +63,34 @@
 |---|---------|-------|--------|
 | 1 | **JSON Schema Contract** — `events.schema.json` defining all 5 SSE event shapes | [events.schema.json](file:///home/cyber/Documents/Graph-Hacks-Hackathon/contracts/events.schema.json) | ✅ Complete |
 | 2 | **FalkorDB Cypher Schema** — Full index/constraint spec, node definitions, relationship catalog, reference queries | [schema.cypher](file:///home/cyber/Documents/Graph-Hacks-Hackathon/contracts/schema.cypher) | ✅ Complete |
-| 3 | **Backend Pytest Suite (27 tests)** — contracts, graph seed, MCP+fake API, LangGraph swarm, FastAPI SSE, E2E demo flow | [tests/](file:///home/cyber/Documents/Graph-Hacks-Hackathon/backend/tests) | ✅ Complete |
-| 4 | **Frontend Vitest Suite (11 tests)** — contract validation, Dashboard rendering/interaction | [__tests__/](file:///home/cyber/Documents/Graph-Hacks-Hackathon/frontend/src/__tests__), [test/](file:///home/cyber/Documents/Graph-Hacks-Hackathon/frontend/src/test) | ✅ Complete |
+| 3 | **Backend Pytest Suite (35 tests)** — contracts, graph seed, MCP+fake API, LangGraph swarm, FastAPI SSE, E2E demo flow | [tests/](backend/tests) | ⚠️ Execution requires FalkorDB on port 6379 |
+| 4 | **Frontend Vitest Suite (20 tests)** — contracts, Dashboard interactions, and Cypher playground | [__tests__/](frontend/src/__tests__), [test/](frontend/src/test) | ✅ Complete |
 
 ---
 
-## 3. Gaps & Improvement Opportunities 🔧
+## 3. Submission Readiness
 
-### 3.1 Critical Gaps (High Impact)
+| Requirement | Project status |
+|-------------|----------------|
+| Public source repository | Git remote is configured as `https://github.com/ishan8351/Graph-Hacks-Hackathon`; public visibility still needs confirmation before submission. |
+| README setup and graph model | Documented in `README.md`, including Docker Compose, manual local startup, synthetic node and relationship types, and seed/schema references. |
+| Cypher queries or algorithms | Documented in `README.md` and `contracts/schema.cypher`; implementations live in `backend/app/mcp/memory_mcp.py`. |
+| Live deployment or complete local setup | No hosted deployment is configured. Docker Compose and manual startup instructions are provided. |
+| Demo video | Not present in the repository; record the working demo and add its public URL to `README.md` before submission. |
+| Track and AI tool disclosure | Suggested tracks and Codex disclosure are recorded in `README.md`; confirm the selected tracks with the submission form. |
 
-| # | Gap | Description | Priority |
-|---|-----|-------------|----------|
-| **G1** | **No real interactive graph visualization** | `GraphCanvas` renders a static card grid — no force-directed layout, no edge lines, no pan/zoom. `@xyflow/react` is installed as a dependency but **never used**. The README advertises an "Interactive FalkorDB Canvas" which doesn't exist yet. | 🔴 **P0** |
-| **G2** | **No `.env` / environment configuration** | `API_BASE` is hardcoded to `http://localhost:8000`. No `.env.local` file, no `NEXT_PUBLIC_API_URL` defined. Will break if backend runs on a different host/port. | 🟡 **P1** |
-| **G3** | **No error boundary / loading states** | Dashboard has no loading skeleton, no error UI, no offline/reconnect indicator for SSE disconnects. | 🟡 **P1** |
-| **G4** | **Auto-scroll missing on AgentFeed** | New events append but feed does not auto-scroll to bottom. Users must manually scroll during live demos. | 🟡 **P1** |
-| **G5** | **GraphCanvas doesn't show edges** | The `links` data is fetched and passed as props but **never rendered** visually — only node cards are displayed. Relationships are invisible to the user. | 🔴 **P0** |
-| **G6** | **No Docker Compose** | README mentions Docker for FalkorDB but there's no `docker-compose.yml` to orchestrate all 3 services (FalkorDB + Backend + Frontend). | 🟡 **P1** |
-
-### 3.2 Feature Enhancements (Medium Impact)
-
-| # | Enhancement | Description | Priority |
-|---|-------------|-------------|----------|
-| **E1** | **Real-time graph animation on mutation** | When `GRAPH_MUTATION` SSE events fire, animate the affected nodes (pulse, glow, color transition) instead of just setting `DEPRECATED` status. | 🟡 **P1** |
-| **E2** | **Session history / log persistence** | Events vanish when a new scenario starts (`setEvents([])`). Add a session history sidebar or accordion to review past runs. | 🟠 **P2** |
-| **E3** | **Cypher query playground** | Add a panel where users can type arbitrary Cypher and execute against FalkorDB via a new `/api/graph/query` endpoint. Powerful for hackathon demos. | 🟠 **P2** |
-| **E4** | **Multi-tenant graph comparison** | `tenant_project_beta` is defined but never seeded or used meaningfully. Add a split-view or diff mode to compare two tenant graphs. | 🟠 **P2** |
-| **E5** | **Timing waterfall for MCP tools** | Instead of showing `latency_ms` as a badge, render a visual waterfall/timeline of all MCP calls within a session. | 🟠 **P2** |
-| **E6** | **Mobile responsive polish** | Layout uses `md:flex-row` but the TopNav action buttons overflow on small screens. Need a hamburger/dropdown menu for mobile. | 🟠 **P2** |
-| **E7** | **Dark/Light theme toggle** | Currently hardcoded dark theme (`bg-[#070b14]`). Add a theme toggle using CSS variables or next-themes. | 🟢 **P3** |
-| **E8** | **Keyboard shortcuts** | Add hotkeys for common actions: `1` = Act 1 S1, `2` = Act 1 S2, `3` = Act 2, `R` = Reset, `Esc` = close drawer. | 🟢 **P3** |
-
-### 3.3 Code Quality & DevOps
-
-| # | Item | Description | Priority |
-|---|------|-------------|----------|
-| **D1** | **Frontend lint/format config** | No ESLint or Prettier config files. Add `.eslintrc.json` and `.prettierrc`. | 🟠 **P2** |
-| **D2** | **Backend type checking** | No `mypy` or `pyright` configuration. Add type checking to CI. | 🟠 **P2** |
-| **D3** | **CI/CD pipeline** | No GitHub Actions workflow. Add `.github/workflows/ci.yml` for lint, test, build on push/PR. | 🟡 **P1** |
-| **D4** | **API documentation** | FastAPI auto-generates Swagger at `/docs`, but there's no standalone API reference doc or Postman collection. | 🟢 **P3** |
-| **D5** | **Production build optimization** | No `next.config.mjs` optimization (image domains, bundle analysis, etc.). Current config is minimal. | 🟢 **P3** |
+The UI now uses a light engineering change-dossier visual system: an activity ledger beside the relationship map, with restrained graph-label color and safety orange reserved for guardrails. It keeps both panels usable at desktop and phone widths, provides an explicit empty state, and keeps the action menu accessible. The graph currently uses a deterministic label-grouped layout with interactive React Flow edges; it is not a force-directed layout. See [frontend/DESIGN.md](frontend/DESIGN.md) for the interface decisions.
 
 ---
 
 ## 4. Prioritized Implementation Roadmap
 
-### Phase 1: Core Visual Experience (P0) — *High Impact for Demo*
+### Phase 1: Core Visual Experience (P0) — *Implemented*
 
-> **Goal:** Replace the static card grid with a real interactive force-directed graph.
+> **Goal:** Show FalkorDB nodes and relationships in an interactive, structured graph canvas.
 
 - [x] **4.1** Implement `@xyflow/react` (React Flow) graph visualization in `GraphCanvas.tsx`
-  - Force-directed / hierarchical layout with custom node and edge renderers
+  - Deterministic label-grouped layout with custom node and edge renderers
   - Render all edges (relationships) with labeled arrows and styled relation chips
   - Color-code nodes by label type with custom palette and Lucide icons
   - Pan, zoom, drag support with custom fitView padding
@@ -147,7 +124,7 @@
 
 ### Phase 4: Nice-to-Haves (P3) — *Polish*
 
-- [x] **4.18** Cybernetic dark palette theme (`#070b14`, `#080d1a`, cyan/amber/indigo highlights)
+- [x] **4.18** Engineering change-dossier visual system (paper surface, graphite ink, cobalt relationships, safety-orange guardrails)
 - [x] **4.19** Keyboard shortcuts for scenario execution (`1` = Act 1 S1, `2` = Act 1 S2, `3` = Act 2, `R` = Reset, `Esc` = Close, `?` = Guide)
 - [x] **4.20** Standalone API reference doc (`docs/API.md`)
 - [x] **4.21** `next.config.mjs` production optimizations (compress, suppress power-by header, ignore build lint check)

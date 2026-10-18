@@ -81,55 +81,39 @@ interface GraphCanvasProps {
 // ═══════════════════════════════════════════════════════════════════════
 
 const NODE_PALETTE: Record<string, { bg: string; border: string; text: string; accent: string; minimap: string }> = {
-  Service:     { bg: "#0c1a2e", border: "#1d4ed8", text: "#93c5fd", accent: "#3b82f6", minimap: "#3b82f6" },
-  CodeModule:  { bg: "#0c1f2e", border: "#0e7490", text: "#67e8f9", accent: "#06b6d4", minimap: "#06b6d4" },
-  APIEndpoint: { bg: "#0c2e1a", border: "#15803d", text: "#86efac", accent: "#22c55e", minimap: "#22c55e" },
-  Decision:    { bg: "#1a0c2e", border: "#7e22ce", text: "#d8b4fe", accent: "#a855f7", minimap: "#a855f7" },
-  JiraTicket:  { bg: "#2e1a0c", border: "#b45309", text: "#fcd34d", accent: "#f59e0b", minimap: "#f59e0b" },
-  VCSComment:  { bg: "#2e0c1a", border: "#be185d", text: "#fda4af", accent: "#f43f5e", minimap: "#f43f5e" },
-  Engineer:    { bg: "#1a0c2e", border: "#6d28d9", text: "#c4b5fd", accent: "#8b5cf6", minimap: "#8b5cf6" },
-  Guardrail:   { bg: "#2e0c0c", border: "#dc2626", text: "#fca5a5", accent: "#ef4444", minimap: "#ef4444" },
-  Failure:     { bg: "#2e2e0c", border: "#ca8a04", text: "#fde68a", accent: "#eab308", minimap: "#eab308" },
-  Agent:       { bg: "#0c2e2e", border: "#0d9488", text: "#5eead4", accent: "#14b8a6", minimap: "#14b8a6" },
-  Incident:    { bg: "#2e1a0c", border: "#c2410c", text: "#fdba74", accent: "#f97316", minimap: "#f97316" },
-  Team:        { bg: "#0c1a2e", border: "#2563eb", text: "#93c5fd", accent: "#3b82f6", minimap: "#3b82f6" },
+  Service:     { bg: "#fafaf6", border: "#8e9ca1", text: "#273b42", accent: "#426c7c", minimap: "#426c7c" },
+  CodeModule:  { bg: "#fafaf6", border: "#8196a2", text: "#263c4d", accent: "#315b78", minimap: "#315b78" },
+  APIEndpoint: { bg: "#fafaf6", border: "#8ea89a", text: "#30483c", accent: "#47745b", minimap: "#47745b" },
+  Decision:    { bg: "#fafaf6", border: "#8d91aa", text: "#393d58", accent: "#5c628c", minimap: "#5c628c" },
+  JiraTicket:  { bg: "#fafaf6", border: "#c29b77", text: "#5d422b", accent: "#a76731", minimap: "#a76731" },
+  VCSComment:  { bg: "#fafaf6", border: "#bb9382", text: "#553a32", accent: "#9f5942", minimap: "#9f5942" },
+  Engineer:    { bg: "#fafaf6", border: "#9a91a5", text: "#463b50", accent: "#71607d", minimap: "#71607d" },
+  Guardrail:   { bg: "#fafaf6", border: "#d38967", text: "#6b321f", accent: "#c75222", minimap: "#c75222" },
+  Failure:     { bg: "#fafaf6", border: "#c29e6c", text: "#5a4527", accent: "#9b702a", minimap: "#9b702a" },
+  Agent:       { bg: "#fafaf6", border: "#7da59d", text: "#294c45", accent: "#39796d", minimap: "#39796d" },
+  Incident:    { bg: "#fafaf6", border: "#c58d71", text: "#5b3929", accent: "#a45d3c", minimap: "#a45d3c" },
+  Team:        { bg: "#fafaf6", border: "#8da2bd", text: "#30465e", accent: "#476b98", minimap: "#476b98" },
 };
 
-const DEFAULT_PALETTE = { bg: "#111827", border: "#374151", text: "#d1d5db", accent: "#6b7280", minimap: "#6b7280" };
+const DEFAULT_PALETTE = { bg: "#fafaf6", border: "#a3aaa1", text: "#3c443d", accent: "#68746b", minimap: "#68746b" };
 
 function getPalette(label: string) {
   return NODE_PALETTE[label] || DEFAULT_PALETTE;
 }
 
 const EDGE_COLORS: Record<string, string> = {
-  IMPLEMENTS:     "#a855f7",
-  FORCED_BY:      "#f59e0b",
-  EXPLAINED_IN:   "#f43f5e",
-  AUTHORED:       "#8b5cf6",
-  PROTECTS:       "#ef4444",
-  ENFORCES:       "#dc2626",
-  EXECUTES_STEP:  "#22c55e",
-  FALLBACK_STEP:  "#6366f1",
-  SUPERSEDED_BY:  "#f97316",
-  CONTAINS:       "#3b82f6",
-  DEPENDS_ON:     "#60a5fa",
-  CALLS:          "#06b6d4",
-  EXPOSES:        "#14b8a6",
-  GOVERNS:        "#a855f7",
-  MITIGATES:      "#ef4444",
-  MAINTAINS:      "#8b5cf6",
-  OWNS:           "#3b82f6",
-  MEMBER_OF:      "#6366f1",
-  RESOLVED:       "#22c55e",
-  INVESTIGATED:   "#f97316",
-  COLLABORATES_WITH: "#60a5fa",
-  CONTRIBUTED_TO: "#06b6d4",
-  LOGGED_EPISODE: "#eab308",
-  DEPRECATES:     "#ef4444",
+  IMPLEMENTS:     "#315b78", FORCED_BY: "#a76731", EXPLAINED_IN: "#9f5942",
+  AUTHORED:       "#71607d", PROTECTS: "#c75222", ENFORCES: "#c75222",
+  EXECUTES_STEP:  "#47745b", FALLBACK_STEP: "#5c628c", SUPERSEDED_BY: "#a45d3c",
+  CONTAINS:       "#476b98", DEPENDS_ON: "#557799", CALLS: "#426c7c",
+  EXPOSES:        "#39796d", GOVERNS: "#5c628c", MITIGATES: "#c75222",
+  MAINTAINS:      "#71607d", OWNS: "#476b98", MEMBER_OF: "#5c628c",
+  RESOLVED:       "#47745b", INVESTIGATED: "#a45d3c", COLLABORATES_WITH: "#557799",
+  CONTRIBUTED_TO: "#426c7c", LOGGED_EPISODE: "#9b702a", DEPRECATES: "#c75222",
 };
 
 function getEdgeColor(type: string): string {
-  return EDGE_COLORS[type] || "#475569";
+  return EDGE_COLORS[type] || "#858d87";
 }
 
 function getNodeIcon(label: string) {
@@ -182,20 +166,20 @@ function GraphNodeComponent({ data }: NodeProps<RFNode<CustomNodeData>>) {
         style={{ background: palette.accent, border: "none", width: 6, height: 6 }}
       />
       <div
-        className={`
-          relative px-3 py-2 rounded-xl border-[1.5px] min-w-[140px] max-w-[200px]
-          transition-all duration-300 ease-out
-          ${isHighlighted ? "ring-2 ring-amber-400 shadow-lg shadow-amber-500/30 scale-105" : ""}
+        className={`graph-node relative
+          ${isHighlighted ? "ring-2 scale-105" : ""}
           ${isDeprecated ? "opacity-60" : ""}
         `}
         style={{
           background: palette.bg,
-          borderColor: isHighlighted ? "#fbbf24" : isDeprecated ? "#dc2626" : palette.border,
-        }}
+          borderColor: isHighlighted ? "#c75222" : isDeprecated ? "#a94832" : palette.border,
+          "--node-accent": palette.accent,
+          "--node-rule": palette.border,
+        } as React.CSSProperties & { "--node-accent": string; "--node-rule": string }}
       >
         {/* Label Type Badge */}
         <div className="flex items-center justify-between gap-1.5 mb-1">
-          <div className="flex items-center gap-1" style={{ color: palette.text }}>
+          <div className="graph-node-type flex items-center gap-1" style={{ color: palette.accent }}>
             {getNodeIcon(graphNode.label)}
             <span className="text-[10px] font-bold uppercase tracking-wider opacity-70">
               {graphNode.label}
@@ -215,7 +199,7 @@ function GraphNodeComponent({ data }: NodeProps<RFNode<CustomNodeData>>) {
 
         {/* Primary Name */}
         <div
-          className="text-[11px] font-bold leading-tight truncate"
+          className="graph-node-name truncate"
           style={{ color: palette.text }}
           title={String(displayName)}
         >
@@ -224,12 +208,12 @@ function GraphNodeComponent({ data }: NodeProps<RFNode<CustomNodeData>>) {
 
         {/* Subtitle / Summary */}
         {graphNode.properties?.summary && (
-          <div className="text-[9px] mt-0.5 line-clamp-2 opacity-60" style={{ color: palette.text }}>
+          <div className="graph-node-copy mt-0.5 line-clamp-2">
             {graphNode.properties.summary}
           </div>
         )}
         {graphNode.properties?.role && (
-          <div className="text-[9px] mt-0.5 italic opacity-70" style={{ color: palette.text }}>
+          <div className="graph-node-copy mt-0.5 italic">
             {graphNode.properties.role}
           </div>
         )}
@@ -237,8 +221,8 @@ function GraphNodeComponent({ data }: NodeProps<RFNode<CustomNodeData>>) {
         {/* Highlight Pulse Animation */}
         {isHighlighted && (
           <div className="absolute -top-1.5 -right-1.5 flex items-center justify-center">
-            <span className="absolute w-3 h-3 rounded-full bg-amber-400 animate-ping opacity-75" />
-            <span className="relative w-2 h-2 rounded-full bg-amber-400" />
+            <span className="absolute w-3 h-3 rounded-full bg-orange-600 animate-ping opacity-75" />
+            <span className="relative w-2 h-2 rounded-full bg-orange-700" />
           </div>
         )}
       </div>
@@ -275,7 +259,7 @@ function GraphEdgeComponent({
 }: EdgeProps<RFEdge<CustomEdgeData>>) {
   const relType = data?.relType || "RELATED_TO";
   const isHighlighted = data?.isHighlighted || false;
-  const color = isHighlighted ? "#fbbf24" : getEdgeColor(relType);
+  const color = isHighlighted ? "#c75222" : getEdgeColor(relType);
 
   const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX,
@@ -310,7 +294,7 @@ function GraphEdgeComponent({
           className="nodrag nopan"
         >
           <span
-            className="text-[8px] font-mono font-semibold px-1.5 py-0.5 rounded-full border whitespace-nowrap"
+            className="graph-edge-label whitespace-nowrap"
             style={{
               background: `${color}15`,
               borderColor: `${color}40`,
@@ -458,7 +442,7 @@ export default function GraphCanvas({
           },
           markerEnd: {
             type: MarkerType.ArrowClosed,
-            color: isHighlighted ? "#fbbf24" : getEdgeColor(link.type),
+            color: isHighlighted ? "#c75222" : getEdgeColor(link.type),
             width: 14,
             height: 14,
           },
@@ -496,9 +480,9 @@ export default function GraphCanvas({
   );
 
   return (
-    <div className="flex flex-col h-full bg-[#070b14] overflow-hidden relative">
+    <div className="relationship-canvas flex h-full flex-col overflow-hidden relative">
       {/* React Flow Canvas */}
-      <div className="flex-1">
+      <div className="min-h-0 flex-1">
         <ReactFlow
           nodes={rfNodes}
           edges={rfEdges}
@@ -512,27 +496,27 @@ export default function GraphCanvas({
           minZoom={0.15}
           maxZoom={2.5}
           proOptions={{ hideAttribution: true }}
-          style={{ background: "#070b14" }}
+          style={{ background: "#eeefe9" }}
           defaultEdgeOptions={{ type: "graphEdge" }}
         >
-          <Background color="#1e293b" gap={24} size={1} />
+          <Background color="#cfd3ca" gap={22} size={1} />
           <Controls
             showInteractive={false}
             position="bottom-right"
             style={{
-              background: "#0f172a",
-              border: "1px solid #1e293b",
-              borderRadius: "12px",
+              background: "#fafaf6",
+              border: "1px solid #bfc4bc",
+              borderRadius: "2px",
               overflow: "hidden",
             }}
           />
           <MiniMap
             nodeColor={minimapNodeColor}
-            maskColor="rgba(7, 11, 20, 0.85)"
+            maskColor="rgba(238, 239, 233, 0.78)"
             style={{
-              background: "#0f172a",
-              border: "1px solid #1e293b",
-              borderRadius: "12px",
+              background: "#fafaf6",
+              border: "1px solid #bfc4bc",
+              borderRadius: "2px",
             }}
             pannable
             zoomable
@@ -540,8 +524,8 @@ export default function GraphCanvas({
 
           {/* Legend Panel */}
           <Panel position="top-left">
-            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 backdrop-blur-sm space-y-1.5 max-w-sm">
-              <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+            <div className="canvas-legend space-y-1.5">
+              <div className="canvas-legend-title flex items-center justify-between mb-1">
                 <span>Node Types {filterLabel && `(Filtered: ${filterLabel})`}</span>
                 {filterLabel && (
                   <button
@@ -560,16 +544,16 @@ export default function GraphCanvas({
                     <button
                       key={label}
                       onClick={() => setFilterLabel(isSelected ? null : label)}
-                      className={`inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full border transition cursor-pointer ${
+                      className={`inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 border transition cursor-pointer ${
                         isSelected
-                          ? "ring-2 ring-cyan-400 font-bold scale-105"
+                          ? "ring-2 ring-blue-700 font-bold scale-105"
                           : filterLabel
                           ? "opacity-40 hover:opacity-100"
                           : "hover:scale-105"
                       }`}
                       style={{
                         background: `${pal.accent}20`,
-                        borderColor: isSelected ? "#22d3ee" : `${pal.accent}50`,
+                        borderColor: isSelected ? "#2456c5" : `${pal.accent}50`,
                         color: pal.text,
                       }}
                       title={`Click to filter by ${label}`}
@@ -588,16 +572,16 @@ export default function GraphCanvas({
 
           {/* Stats Panel */}
           <Panel position="top-right">
-            <div className="bg-slate-900/90 border border-slate-800 rounded-xl px-3 py-2 backdrop-blur-sm flex items-center gap-4 text-[11px] font-mono text-slate-400">
+            <div className="canvas-stats flex items-center gap-4">
               <span>
-                Nodes: <strong className="text-cyan-300">{graphNodes.length}</strong>
+                Nodes: <strong className="text-cyan-700">{graphNodes.length}</strong>
               </span>
               <span>
-                Edges: <strong className="text-indigo-300">{graphLinks.length}</strong>
+                Edges: <strong className="text-indigo-700">{graphLinks.length}</strong>
               </span>
               {highlightedNodeIds.length > 0 && (
                 <span className="text-amber-400">
-                  ⚡ {highlightedNodeIds.length} traversed
+                  {highlightedNodeIds.length} in guardrail path
                 </span>
               )}
             </div>
@@ -605,9 +589,23 @@ export default function GraphCanvas({
         </ReactFlow>
       </div>
 
+      {!isLoading && graphNodes.length === 0 && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-6 text-center">
+          <div className="canvas-empty">
+            <div className="canvas-empty-icon mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl border">
+              <Layers className="h-5 w-5" />
+            </div>
+            <p className="text-sm font-semibold text-slate-200">No graph data loaded</p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-400">
+              Start FalkorDB and the API, then choose Reset &amp; Seed Graph to load a tenant topology.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Selected Node Inspector */}
       {selectedNode && (
-        <div className="absolute bottom-16 left-4 right-4 max-w-md z-10 p-4 rounded-xl border border-slate-700 bg-slate-900/95 backdrop-blur-md shadow-2xl space-y-2 animate-in slide-in-from-bottom duration-200">
+        <div className="node-inspector absolute bottom-16 left-4 right-4 max-w-md z-10 p-4 space-y-2 animate-in slide-in-from-bottom duration-200">
           <div className="flex items-center justify-between border-b border-slate-800 pb-2">
             <div className="flex items-center gap-2">
               {getNodeIcon(selectedNode.label)}
@@ -638,7 +636,7 @@ export default function GraphCanvas({
 
       {/* Loading Skeleton Overlay */}
       {isLoading && (
-        <div className="absolute inset-0 bg-[#070b14]/85 backdrop-blur-sm z-30 flex flex-col items-center justify-center space-y-4 animate-in fade-in duration-200">
+        <div className="absolute inset-0 bg-[#eeefe9]/90 z-30 flex flex-col items-center justify-center space-y-4 animate-in fade-in duration-200">
           <div className="relative flex items-center justify-center">
             <div className="w-16 h-16 rounded-full border-4 border-cyan-500/20 border-t-cyan-400 animate-spin" />
             <div className="absolute w-8 h-8 rounded-full border-2 border-indigo-500/30 border-b-indigo-400 animate-spin" />

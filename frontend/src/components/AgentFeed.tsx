@@ -51,13 +51,13 @@ export default function AgentFeed({ events, onOpenExplainDrawer }: AgentFeedProp
   const totalLatency = mcpCalls.reduce((acc, c) => acc + (c.latency_ms || 0), 0);
 
   return (
-    <div className="flex flex-col h-full bg-[#0a0f1d] border-r border-slate-800 overflow-hidden">
+    <div className="activity-ledger flex flex-col h-full overflow-hidden">
       {/* Header & Tabs */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-800 bg-slate-900/60">
+      <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-slate-800 bg-slate-900/60 sm:px-4">
         <div className="flex items-center gap-2">
           <Terminal className="w-4 h-4 text-cyan-400" />
-          <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-            Live Swarm Stream
+          <h2 className="whitespace-nowrap text-[11px] font-bold text-slate-200 uppercase tracking-wider sm:text-xs">
+            Live Feed
           </h2>
         </div>
         <div className="flex items-center gap-1 bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[11px]">

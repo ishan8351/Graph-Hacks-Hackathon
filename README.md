@@ -6,7 +6,7 @@
 [![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent%20Swarm-purple?style=flat-square)](https://langchain.com)
 [![FastAPI](https://img.shields.io/badge/FastAPI-SSE%20Streaming-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com)
 [![Next.js 15](https://img.shields.io/badge/Next.js%2015-App%20Router-black?style=flat-square&logo=next.js)](https://nextjs.org)
-[![Tests Passing](https://img.shields.io/badge/Tests-100%25%20Passing-brightgreen?style=flat-square)](file:///home/ishan/Graph-Hacks-Hackathon/backend/tests)
+[![Automated Tests](https://img.shields.io/badge/tests-backend%20%2B%20frontend-blue?style=flat-square)](backend/tests)
 
 ---
 
@@ -193,11 +193,24 @@ LIMIT 1;
 
 ### Option 1: 1-Click Launch (Recommended)
 ```bash
+# One-time setup
+python3 -m venv backend/.venv
+backend/.venv/bin/pip install -r backend/requirements.txt
+cd frontend && npm ci && cd ..
+
+# Start FalkorDB separately (Docker/Podman), then launch the app
+docker run -p 6379:6379 -p 3000:3000 -d --name falkordb falkordb/falkordb:latest
 ./start_demo.sh
 ```
-This automatically verifies FalkorDB on port 6379, pre-seeds the enterprise topology in FalkorDB, and launches both FastAPI and Next.js concurrently.
+The launcher verifies FalkorDB on port 6379, seeds both tenant graphs, and starts FastAPI and Next.js. Open **http://localhost:3001**. The first screen load also offers **Reset & Seed Graph** for the selected tenant.
 
-### Option 2: Manual Start
+### Option 2: Docker Compose
+```bash
+docker compose up --build
+```
+Open **http://localhost:3001** and choose **Reset & Seed Graph**. The compose stack exposes FalkorDB on `6379`, its browser UI on `3000`, FastAPI on `8000`, and Next.js on `3001`.
+
+### Option 3: Manual Start
 
 #### 1. Start FalkorDB (if not already running)
 ```bash
@@ -206,14 +219,15 @@ docker run -p 6379:6379 -p 3000:3000 -d --name falkordb falkordb/falkordb:latest
 
 #### 2. Start Backend
 ```bash
-cd backend
-source .venv/bin/activate
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+python3 -m venv backend/.venv
+backend/.venv/bin/pip install -r backend/requirements.txt
+cd backend && .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 #### 3. Start Frontend
 ```bash
 cd frontend
+npm ci
 npm run dev -- -p 3001
 ```
 
@@ -223,30 +237,43 @@ Visit **http://localhost:3001** to view the application.
 
 ## 🧪 Comprehensive Automated Test Verification
 
-All phases are verified with **100% green tests** across backend and frontend:
+Run the frontend checks from the repository's `frontend/` directory. Backend API and end-to-end tests require a reachable FalkorDB instance on port 6379.
 
-### Backend Pytest Suite (27 Tests)
+### Backend Pytest Suite (35 Tests)
 ```bash
-/home/ishan/Graph-Hacks-Hackathon/backend/.venv/bin/pytest -v backend/tests
+backend/.venv/bin/pytest -v backend/tests
 ```
-- `backend/tests/test_contracts.py` (9 passed)
-- `backend/tests/test_phase1_graph_seed.py` (6 passed)
-- `backend/tests/test_phase2_fake_api_and_mcp.py` (5 passed)
-- `backend/tests/test_phase3_langgraph_swarm.py` (2 passed)
-- `backend/tests/test_phase4_fastapi_sse.py` (4 passed)
-- `backend/tests/test_e2e_demo_flow.py` (1 passed)
-**Total: 27 passed in ~1.1s**
+- `backend/tests/test_contracts.py` (10 tests)
+- `backend/tests/test_phase1_graph_seed.py` (6 tests)
+- `backend/tests/test_phase2_fake_api_and_mcp.py` (5 tests)
+- `backend/tests/test_phase3_langgraph_swarm.py` (6 tests)
+- `backend/tests/test_phase4_fastapi_sse.py` (7 tests)
+- `backend/tests/test_e2e_demo_flow.py` (1 test)
+**Total: 35 tests**
 
-### Frontend Vitest Suite (11 Tests)
+### Frontend Vitest Suite (20 Tests)
 ```bash
 cd frontend && npm test
 ```
 - `contracts.test.ts` (6 passed)
-- `Dashboard.test.tsx` (5 passed)
-**Total: 11 passed in ~1.2s**
+- `CypherPlaygroundModal.test.tsx` (3 passed)
+- `Dashboard.test.tsx` (11 passed)
+**Total: 20 passed**
 
 ### Production Build
 ```bash
 cd frontend && npm run build
 ```
-**Compiled successfully in 1.9s with 0 errors.**
+The optimized Next.js production build completes successfully.
+
+---
+
+## Graph Hacks Submission Details
+
+- **Source repository:** [github.com/ishan8351/Graph-Hacks-Hackathon](https://github.com/ishan8351/Graph-Hacks-Hackathon) (the repository must be public when submitted).
+- **Tracks:** Agent Memory and Coordination; Agents That Act on Connected Data.
+- **Graph data model:** Each tenant is an isolated FalkorDB graph. Nodes model synthetic `Service`, `CodeModule`, `APIEndpoint`, `Decision`, `JiraTicket`, `VCSComment`, `Engineer`, `Team`, `Guardrail`, `Incident`, `Agent`, and `Failure` records. Typed relationships such as `IMPLEMENTS`, `FORCED_BY`, `EXPLAINED_IN`, `AUTHORED`, `PROTECTS`, `EXECUTES_STEP`, `SUPERSEDED_BY`, and `LOGGED_EPISODE` carry the decision provenance, operational routes, and learned failure history. The data is synthetic and seeded by [seed_enterprise_graph.py](backend/app/db/seed_enterprise_graph.py); indexes and reference queries are in [schema.cypher](contracts/schema.cypher).
+- **Core Cypher and graph algorithms:** The product depends on multi-hop decision tracing, graph-based expert ranking, and an atomic failure-to-route mutation. See the examples above and the implementation in [memory_mcp.py](backend/app/mcp/memory_mcp.py). The runnable schema and queries are in [contracts/schema.cypher](contracts/schema.cypher).
+- **Local setup:** The Docker Compose and manual setup instructions above are the complete local run path; a public live deployment is not configured in this repository.
+- **Demo video:** Record the working project and add the public video URL here before submitting. The two-session self-healing demo and the guardrail demo are described above.
+- **AI coding assistant disclosure:** OpenAI Codex was used to review and modify the UI and submission documentation. The project team should review the changes and be ready to explain its graph model, Cypher, architecture, and implementation decisions.
